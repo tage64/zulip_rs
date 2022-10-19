@@ -8,12 +8,12 @@ use pest::Parser;
 #[grammar = "rc.pest"]
 pub struct INIParser;
 
-#[derive(Deserialize, Debug, Clone)]
+#[derive(Deserialize, Debug, Clone, PartialEq, Eq)]
 pub struct ZulipRuntimeConfig {
     pub api: ZulipAPISettings,
 }
 
-#[derive(Deserialize, Debug, Clone)]
+#[derive(Deserialize, Debug, Clone, PartialEq, Eq)]
 pub struct ZulipAPISettings {
     pub email: String,
     pub key: String,
@@ -59,4 +59,32 @@ pub fn parse_from_str(rc: &str) -> Result<ZulipRuntimeConfig> {
             site: site.to_string(),
         },
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_parse_from_str() {
+        let email = "me@example.com".to_string();
+        let key = "1aBC9afGhIjKLmNoPqR45Stuv09WvXyZ".to_string();
+        let site = "https://leanprover.zulipchat.com".to_string();
+        assert_eq!(
+            parse_from_str(
+                indoc::formatdoc! {
+                    "[api]
+                    email={email}
+                    key={key}
+                    site={site}
+                "
+                }
+                .as_str()
+            )
+            .unwrap(),
+            ZulipRuntimeConfig {
+                api: ZulipAPISettings { email, key, site }
+            }
+        );
+    }
 }
