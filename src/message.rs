@@ -1,29 +1,23 @@
 use serde::{Deserialize, Serialize, Serializer};
 
-#[derive(Serialize, Deserialize, Debug)]
-#[serde(tag = "result")]
-pub enum SendMessageResponse {
-    #[serde(rename = "success")]
-    Success { id: i64, msg: String },
-    #[serde(rename = "error")]
-    Error {
-        code: String,
-        msg: String,
-        stream: Option<String>,
-    },
+#[derive(Deserialize, Debug)]
+pub struct SendMessageResponse {
+    pub id: i64,
+    pub msg: String,
 }
 
 #[derive(Serialize, Debug)]
-#[serde(tag = "type")]
+#[serde(tag = "type", rename_all = "snake_case")]
 pub enum SendMessageRequest {
-    #[serde(rename = "stream")]
     Stream {
         to: String,
         topic: String,
         content: String,
     },
-    #[serde(rename = "private")]
-    Private { to: String, content: String },
+    Private {
+        to: String,
+        content: String,
+    },
 }
 
 #[derive(Serialize, Debug)]
@@ -82,43 +76,42 @@ pub struct Narrow {
     pub operator: String,
 }
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Deserialize, Debug)]
 pub struct GetMessagesResponse {
-    msg: String,
-    result: String,
-    anchor: i64,
-    found_newest: bool,
-    found_oldest: Option<bool>,
-    found_anchor: bool,
-    history_limited: Option<bool>,
-    messages: Vec<ReceivedMessage>,
+    pub msg: String,
+    pub anchor: i64,
+    pub found_newest: bool,
+    pub found_oldest: Option<bool>,
+    pub found_anchor: bool,
+    pub history_limited: Option<bool>,
+    pub messages: Vec<ReceivedMessage>,
 }
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Deserialize, Debug)]
 pub struct ReceivedMessage {
-    avatar_url: String,
-    client: String,
-    content: String,
-    content_type: String,
-    display_recipient: DisplayRecipient,
-    id: i64,
-    is_me_message: bool,
-    reactions: Vec<Reaction>,
-    recipient_id: i64,
-    sender_email: String,
-    sender_full_name: String,
-    sender_id: i64,
-    sender_realm_str: String,
-    stream_id: Option<i64>,
-    subject: String,
-    topic_links: Vec<String>,
-    submessages: Vec<String>,
-    timestamp: i64,
-    r#type: String,
-    flags: Vec<String>,
-    last_edit_timestamp: Option<i64>,
-    match_content: Option<String>,
-    match_subject: Option<String>,
+    pub avatar_url: String,
+    pub client: String,
+    pub content: String,
+    pub content_type: String,
+    pub display_recipient: DisplayRecipient,
+    pub id: i64,
+    pub is_me_message: bool,
+    pub reactions: Vec<Reaction>,
+    pub recipient_id: i64,
+    pub sender_email: String,
+    pub sender_full_name: String,
+    pub sender_id: i64,
+    pub sender_realm_str: String,
+    pub stream_id: Option<i64>,
+    pub subject: String,
+    pub topic_links: Vec<String>,
+    pub submessages: Vec<String>,
+    pub timestamp: i64,
+    pub r#type: String,
+    pub flags: Vec<String>,
+    pub last_edit_timestamp: Option<i64>,
+    pub match_content: Option<String>,
+    pub match_subject: Option<String>,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -142,20 +135,6 @@ pub struct Reaction {
     emoji_name: String,
     reaction_type: String,
     user_id: i64,
-}
-
-#[derive(Deserialize, Debug)]
-#[serde(tag = "result")]
-#[serde(rename_all = "camelCase")]
-pub enum DeleteMessageResponse {
-    Success,
-    Error(DeleteMessageError),
-}
-
-#[derive(Deserialize, Debug)]
-pub struct DeleteMessageError {
-    code: String,
-    msg: String,
 }
 
 #[derive(Serialize, Debug)]

@@ -1,107 +1,136 @@
 use crate::message::*;
 use crate::rc::{parse_from_str, ZulipRuntimeConfig};
-use crate::CommonMutateResponse;
-use anyhow::{Context, Result};
 use reqwest::{Method, RequestBuilder};
+use serde::{de::DeserializeOwned, Deserialize};
+
+/// An error that might occur when making a reqwest to the Zulip server.
+#[derive(thiserror::Error, Debug)]
+pub enum Error {
+    /// A response from the server that the requested operation failed.
+    ///
+    /// This is usually a recoverable error. It might for instance occur when one tries to send a
+    /// message to a user that does not exist.
+    #[error("Unsuccessful: {code}, {msg}")]
+    Unsuccessful {
+        /// This is a short string acting as identifier for the error.
+        ///
+        /// It is named "code" in the API so we keep that name although it  might be a bit
+        /// confusing.
+        code: String,
+        /// A message from the server regarding the error.
+        msg: String,
+        /// A stream related to the error. Not applicable in most cases.
+        stream: Option<String>,
+    },
+
+    /// The parsing of the JSON data in the response body (from the server) failed.
+    #[error("Failed to parse response body")]
+    BadResponse(#[from] serde_json::Error),
+
+    /// A network/HTTP error from the reqwest crate.
+    #[error("Network/HTTP error")]
+    Network(#[from] reqwest::Error),
+}
+
+pub type Result<T, E = Error> = std::result::Result<T, E>;
+
+/// A response from the server in a unified format parameterized by the type of data we want to
+/// retrieve.
+///
+/// This is primarily used for deserializing the response and should be converted to a `Result<T>`.
+#[derive(serde::Serialize, Deserialize, Debug)]
+#[serde(tag = "result", rename_all = "snake_case")]
+enum Response<T> {
+    Success(T),
+    Error {
+        code: String,
+        msg: String,
+        stream: Option<String>,
+    },
+}
+
+impl<T> Response<T> {
+    fn into_result(self) -> Result<T> {
+        match self {
+            Self::Success(x) => Ok(x),
+            Self::Error { code, msg, stream } => Err(Error::Unsuccessful { code, msg, stream }),
+        }
+    }
+}
+
+/// Parse a JSON response from the server and convert it to a `Result<T>` where `T` is the type of
+/// the requested data.
+async fn parse_response<T: DeserializeOwned>(response: reqwest::Response) -> Result<T> {
+    serde_json::from_slice::<Response<T>>(&response.bytes().await?)?.into_result()
+}
 
 pub struct Client {
     rc: ZulipRuntimeConfig,
 }
 
 impl Client {
-    pub fn new(zulip_rc: &str) -> Result<Self> {
+    pub fn new(zulip_rc: &str) -> anyhow::Result<Self> {
         let rc = parse_from_str(zulip_rc)?;
         Ok(Client { rc })
     }
-    pub fn parse(zulip_rc: &str) -> Result<Self> {
+    pub fn parse(zulip_rc: &str) -> anyhow::Result<Self> {
         let rc = parse_from_str(zulip_rc)?;
         Ok(Client { rc })
     }
     pub async fn send_message(&self, req: SendMessageRequest) -> Result<SendMessageResponse> {
-        let result = self
+        let response = self
             .http_client(Method::POST, "/api/v1/messages")
             .form(&req)
             .send()
             .await?;
-        let resp: SendMessageResponse = result.json().await?;
-        Ok(resp)
+        parse_response(response).await
     }
     pub async fn get_messages(&self, req: GetMessagesRequest) -> Result<GetMessagesResponse> {
-        let qs = serde_qs::to_string(&req)?;
+        let qs = serde_qs::to_string(&req).unwrap();
         let narrow = serde_json::to_string(&req.narrow)?;
         let qs = format!("/api/v1/messages?{}&narrow={}", qs, narrow);
-        println!("{}", qs);
-        let resp: GetMessagesResponse = self
-            .http_client(Method::GET, &qs)
-            .send()
-            .await
-            .context("get messages send failed")?
-            .json()
-            .await
-            .context("deserialize to GetMessagesResponse failed")?;
-        Ok(resp)
+        let response = self.http_client(Method::GET, &qs).send().await?;
+        parse_response(response).await
     }
-    pub async fn delete_message(&self, id: i64) -> Result<DeleteMessageResponse> {
-        let resp: DeleteMessageResponse = self
+    pub async fn delete_message(&self, id: i64) -> Result<()> {
+        let response = self
             .http_client(Method::DELETE, &format!("/api/v1/messages/{}", id))
             .send()
-            .await
-            .context("delete message failed")?
-            .json()
-            .await
-            .context("deserialize to DeleteMessageResponse failed")?;
-        Ok(resp)
+            .await?;
+        parse_response(response).await
     }
-    pub async fn edit_message(&self, req: EditMessageRequest) -> Result<CommonMutateResponse> {
-        let resp: CommonMutateResponse = self
+    pub async fn edit_message(&self, req: EditMessageRequest) -> Result<()> {
+        let response = self
             .http_client(
                 Method::PATCH,
                 &format!("/api/v1/messages/{}", req.message_id),
             )
             .form(&req)
             .send()
-            .await
-            .context("delete message failed")?
-            .json()
-            .await
-            .context("deserialize to DeleteMessageResponse failed")?;
-        Ok(resp)
+            .await?;
+        parse_response(response).await
     }
-    pub async fn add_emoji_reaction(
-        &self,
-        req: AddEmojiReactionRequest,
-    ) -> Result<CommonMutateResponse> {
-        let resp: CommonMutateResponse = self
+    pub async fn add_emoji_reaction(&self, req: AddEmojiReactionRequest) -> Result<()> {
+        let response = self
             .http_client(
                 Method::POST,
                 &format!("/api/v1/messages/{}/reactions", req.message_id),
             )
             .form(&req)
             .send()
-            .await
-            .context("delete message failed")?
-            .json()
-            .await
-            .context("deserialize to DeleteMessageResponse failed")?;
-        Ok(resp)
+            .await?;
+        parse_response(response).await
     }
-    pub async fn remove_emoji_reaction(
-        &self,
-        req: RemoveEmojiReactionRequest,
-    ) -> Result<CommonMutateResponse> {
-        let resp: CommonMutateResponse = self
+    pub async fn remove_emoji_reaction(&self, req: RemoveEmojiReactionRequest) -> Result<()> {
+        let response = self
             .http_client(
                 Method::DELETE,
                 &format!("/api/v1/messages/{}/reactions", req.message_id),
             )
             .form(&req)
             .send()
-            .await
-            .context("delete message failed")?
-            .json()
-            .await
-            .context("deserialize to DeleteMessageResponse failed")?;
-        Ok(resp)
+            .await?;
+        parse_response(response).await
     }
     fn http_client(&self, method: Method, endpoint: &str) -> RequestBuilder {
         let client = reqwest::Client::new();
