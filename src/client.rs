@@ -1,5 +1,5 @@
 use crate::message::*;
-use crate::rc::{parse_from_str, ZulipRuntimeConfig};
+use crate::ZulipRc;
 use reqwest::{Method, RequestBuilder};
 use serde::{de::DeserializeOwned, Deserialize};
 
@@ -65,17 +65,12 @@ async fn parse_response<T: DeserializeOwned>(response: reqwest::Response) -> Res
 }
 
 pub struct Client {
-    rc: ZulipRuntimeConfig,
+    rc: ZulipRc,
 }
 
 impl Client {
-    pub fn new(zulip_rc: &str) -> anyhow::Result<Self> {
-        let rc = parse_from_str(zulip_rc)?;
-        Ok(Client { rc })
-    }
-    pub fn parse(zulip_rc: &str) -> anyhow::Result<Self> {
-        let rc = parse_from_str(zulip_rc)?;
-        Ok(Client { rc })
+    pub fn new(rc: ZulipRc) -> anyhow::Result<Self> {
+        Ok(Self { rc })
     }
     pub async fn send_message(&self, req: SendMessageRequest) -> Result<SendMessageResponse> {
         let response = self
@@ -134,10 +129,10 @@ impl Client {
     }
     fn http_client(&self, method: Method, endpoint: &str) -> RequestBuilder {
         let client = reqwest::Client::new();
-        let url = format!("{}{}", &self.rc.api.site, endpoint);
+        let url = format!("{}{}", &self.rc.site, endpoint);
         client
             .request(method, url)
-            .basic_auth(&self.rc.api.email, Some(&self.rc.api.key))
+            .basic_auth(&self.rc.email, Some(&self.rc.key))
             .header("application", "x-www-form-urlencoded")
     }
 }
@@ -151,6 +146,15 @@ mod tests {
     };
     use std::net::SocketAddr;
 
+    /// Creat a client for testing based on the socket address to the server.
+    fn test_client(socket_addr: &SocketAddr) -> Client {
+        Client::new(ZulipRc {
+            email: "me@example.com".to_string(),
+            key: "testkey".to_string(),
+            site: format!("http://{socket_addr}"),
+        })
+        .unwrap()
+    }
     #[tokio::test]
     async fn test_send_private_message() {
         let server = MockServer::start();
@@ -159,7 +163,7 @@ mod tests {
             then.status(200)
                 .body(r#"{"result": "success", "msg": "", "id": 123}"#);
         });
-        let client = Client::new(&rc(server.address())).unwrap();
+        let client = test_client(server.address());
         let req = SendMessageRequest::Private {
             to: "[8]".to_string(),
             content: "abc".to_string(),
@@ -176,7 +180,7 @@ mod tests {
             then.status(200)
                 .body(r#"{"result": "success", "msg": "", "id": 123}"#);
         });
-        let client = Client::new(&rc(server.address())).unwrap();
+        let client = test_client(server.address());
         let req = SendMessageRequest::Stream {
             to: "[8]".to_string(),
             topic: "test".to_string(),
@@ -193,7 +197,7 @@ mod tests {
             when.method(GET).path("/api/v1/messages");
             then.status(200).body(message_template());
         });
-        let client = Client::new(&rc(server.address())).unwrap();
+        let client = test_client(server.address());
 
         let req = GetMessagesRequest::new(0, 0);
 
@@ -209,16 +213,10 @@ mod tests {
             when.method(DELETE).path(format!("/api/v1/messages/{}", id));
             then.status(200).body(r#"{"result": "success", "msg": ""}"#);
         });
-        let client = Client::new(&rc(server.address())).unwrap();
+        let client = test_client(server.address());
         let result = client.delete_message(id).await;
         mock.assert();
         assert!(result.is_ok());
-    }
-    fn rc(addr: &SocketAddr) -> String {
-        format!(
-            "[api]\nemail=test@test.tester.com\nkey=testkey\nsite=http://{}\n",
-            addr
-        )
     }
     fn message_template() -> String {
         r#"{

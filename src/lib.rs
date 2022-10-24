@@ -1,5 +1,6 @@
 mod client;
 pub mod message;
-pub mod rc;
+mod rc;
 
 pub use client::Client;
+pub use rc::ZulipRc;
