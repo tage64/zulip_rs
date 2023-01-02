@@ -1,4 +1,5 @@
-use serde::{Deserialize, Serialize, Serializer};
+use chrono::prelude::*;
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 #[derive(Deserialize, Debug)]
 pub struct SendMessageResponse {
@@ -22,11 +23,52 @@ pub enum SendMessageRequest {
 
 #[derive(Serialize, Debug)]
 pub struct GetMessagesRequest {
+    /// Anchor the fetching of new messages.
+    #[serde(
+        serialize_with = "serialize_as_json_str",
+        skip_serializing_if = "Option::is_none"
+    )]
     pub anchor: Option<Anchor>,
+    /// Whether a message with the specified ID matching the narrow should be included.
+    ///
+    /// New in Zulip 6.0 (feature level 155).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub include_anchor: Option<bool>,
+    /// The number of messages with IDs less than the anchor to retrieve.
     pub num_before: i64,
+    /// The number of messages with IDs greater than the anchor to retrieve.
     pub num_after: i64,
-    #[serde(skip_serializing)]
+    /// The narrow (set of message filters) where you want to fetch the messages from.
+    ///
+    /// Note that many narrows, including all that lack a stream or streams operator, search the
+    /// user's personal message history. See
+    /// [here](https://zulip.com/help/search-for-messages#searching-shared-history) for details.
+    /// For example, if you would like to fetch messages from all public streams instead of only
+    /// the user's message history, then a specific narrow for messages sent to all public streams
+    /// can be used: {"operator": "streams", "operand": "public"}.
+    ///
+    /// Newly created bot users are not usually subscribed to any streams, so bots using this API
+    /// should either be subscribed to appropriate streams or use a shared history search narrow
+    /// with this endpoint.
+    #[serde(
+        serialize_with = "serialize_as_json_str",
+        skip_serializing_if = "Option::is_none"
+    )]
     pub narrow: Option<Vec<Narrow>>,
+    /// Whether the client supports computing gravatars URLs.
+    ///
+    /// If enabled, avatar_url will be
+    /// included in the response only if there is a Zulip avatar, and will be null for users who
+    /// are using gravatar as their avatar. This option significantly reduces the compressed size
+    /// of user data, since gravatar URLs are long, random strings and thus do not compress well.
+    ///
+    /// The client_gravatar field should be set to true if clients can compute their own gravatars.
+    pub client_gravatar: bool,
+    /// Convert the content from markdown to HTML on the server.
+    ///
+    /// If true, message content is returned in the rendered HTML format. If false, message content
+    /// is returned in the raw Markdown-format text that user entered.
+    pub apply_markdown: bool,
 }
 
 impl GetMessagesRequest {
@@ -36,6 +78,9 @@ impl GetMessagesRequest {
             num_before,
             num_after,
             narrow: None,
+            apply_markdown: true,
+            client_gravatar: true,
+            include_anchor: None,
         }
     }
     pub fn anchor(&mut self, anchor: Anchor) -> &mut Self {
@@ -48,77 +93,149 @@ impl GetMessagesRequest {
     }
 }
 
+/// Type of anchor when retreiving messages.
+///
+/// `Anchor::Newest`, `Anchor::Oldest` and `Anchor::FirstUnread` are new in Zulip 3.0 (feature
+/// level 1).
 #[derive(Debug)]
 pub enum Anchor {
+    /// The most recent message.
     Newest,
+    /// The oldest message.
     Oldest,
+    /// The oldest unread message matching the query, if any; otherwise, the most recent message.
     FirstUnread,
-    MessageID(i64),
+    /// Integer message ID to anchor fetching of new messages.
+    MessageId(u64),
 }
 
 impl Serialize for Anchor {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         match self {
-            Anchor::Newest => serializer.serialize_str("newest"),
-            Anchor::Oldest => serializer.serialize_str("oldest"),
-            Anchor::FirstUnread => serializer.serialize_str("first_unread"),
-            Anchor::MessageID(i) => serializer.serialize_i64(*i),
+            Self::Newest => serializer.serialize_unit_variant("newest", 0, "newest"),
+            Self::Oldest => serializer.serialize_unit_variant("oldest", 1, "oldest"),
+            Self::FirstUnread => {
+                serializer.serialize_unit_variant("first_unread", 2, "first_unread")
+            }
+            Self::MessageId(x) => serializer.serialize_u64(*x),
         }
     }
 }
 
+/// A filter for Zulip messages.
+///
+/// A narrow is a set of filters for Zulip messages, that can be based on many different factors
+/// (like sender, stream, topic, search keywords, etc.). Narrows are used in various places in the
+/// the Zulip API (most importantly, in the API for fetching messages).
+///
+/// Read more about narrows [here](https://zulip.com/api/construct-narrow).
 #[derive(Serialize, Debug)]
 pub struct Narrow {
     pub operand: String,
     pub operator: String,
+    pub negated: bool,
 }
 
+/// The response of a get_messages request.
 #[derive(Deserialize, Debug)]
 pub struct GetMessagesResponse {
-    pub msg: String,
-    pub anchor: i64,
+    /// The same anchor specified in the request (or the computed one, if
+    /// `GetMessagesRequest::anchor` was set to `Anchor::FirstUnread`).
+    pub anchor: u64,
+    /// Whether the messages list includes the very newest messages matching the narrow (used by
+    /// clients that paginate their requests to decide whether there are more messages to fetch).
     pub found_newest: bool,
+    /// Whether the messages list includes the very oldest messages matching the narrow (used by
+    /// clients that paginate their requests to decide whether there are more messages to fetch).
     pub found_oldest: Option<bool>,
+    /// Whether the anchor message is included in the response. If the message with the ID
+    /// specified in the request does not exist, did not match the narrow, or was excluded via
+    /// include_anchor=false, this will be false.
     pub found_anchor: bool,
+    /// Whether the message history was limited due to plan restrictions.
+    ///
+    /// This flag is set to true only when the oldest messages(found_oldest) matching the narrow is fetched.
     pub history_limited: Option<bool>,
+    /// The retreived messages.
     pub messages: Vec<ReceivedMessage>,
 }
 
 #[derive(Deserialize, Debug)]
 pub struct ReceivedMessage {
-    pub avatar_url: String,
-    pub client: String,
+    /// The unique message ID. Messages should always be displayed sorted by ID.
+    pub id: u64,
+    /// The content/body of the message.
     pub content: String,
+    /// The HTTP content_type for the message content. This will be text/html or text/x-markdown,
+    /// depending on whether apply_markdown was set.
     pub content_type: String,
+    /// The URL of the user's avatar. Can be null only if client_gravatar was passed, which means
+    /// that the user has not uploaded an avatar in Zulip, and the client should compute the
+    /// gravatar URL by hashing the user's email address itself for this user.
+    pub avatar_url: Option<String>,
+    /// A Zulip "client" string, describing what Zulip client sent the message.
+    pub client: String,
+    /// Data of the recipient of the message.
     pub display_recipient: DisplayRecipient,
-    pub id: i64,
+    /// The UNIX timestamp for when the message was sent, in UTC seconds.
+    #[serde(with = "chrono::serde::ts_seconds")]
+    pub timestamp: DateTime<Utc>,
+    /// The time for when the message was last edited.
+    ///
+    /// `None` if the message has never been edited.
+    #[serde(default, deserialize_with = "deserialize_timestamp_to_option")]
+    pub last_edit_timestamp: Option<DateTime<Utc>>,
+    /// A list of edits, with each element documenting the changes in a previous edit made to
+    /// the the message, ordered chronologically from most recent to least recent edit.
+    pub edit_history: Option<Vec<EditHistory>>,
+    /// Whether the message is a /me status message.
     pub is_me_message: bool,
+    /// Reactions to the message.
     pub reactions: Vec<Reaction>,
-    pub recipient_id: i64,
+    /// A unique ID for the set of users receiving the message (either a stream or group of users).
+    /// Useful primarily for hashing.
+    pub recipient_id: u64,
+    /// The Zulip display email address of the message's sender.
     pub sender_email: String,
+    /// The full name of the message's sender.
     pub sender_full_name: String,
-    pub sender_id: i64,
+    /// The user ID of the message's sender.
+    pub sender_id: u64,
+    /// A string identifier for the realm the sender is in. Unique only within the context of a
+    /// given Zulip server.
+    ///
+    /// E.g. on example.zulip.com, this will be example.
     pub sender_realm_str: String,
-    pub stream_id: Option<i64>,
+    /// Only present for stream messages; the ID of the stream.
+    pub stream_id: Option<u64>,
     pub subject: String,
-    pub topic_links: Vec<String>,
-    pub submessages: Vec<String>,
-    pub timestamp: i64,
-    pub r#type: String,
+    pub r#type: MessageType,
+    /// The user's message flags for the message.
     pub flags: Vec<String>,
-    pub last_edit_timestamp: Option<i64>,
+    /// (Only present if keyword search was included among the narrow parameters.)
+    /// HTML content of a queried message that matches the narrow, with <span class="highlight">
+    /// elements wrapping the matches for the search keywords.
     pub match_content: Option<String>,
+    /// (Only present if keyword search was included among the narrow parameters.)
+    /// HTML-escaped topic of a queried message that matches the narrow, with <span
+    /// class="highlight"> elements wrapping the matches for the search keywords.
     pub match_subject: Option<String>,
 }
 
+#[derive(Deserialize, Debug)]
+#[serde(rename_all = "snake_case")]
+pub enum MessageType {
+    Private,
+    Stream,
+}
+
+/// Data of the recipient of a message.
 #[derive(Serialize, Deserialize, Debug)]
 #[serde(untagged)]
 pub enum DisplayRecipient {
     Stream(String),
     PrivateMessage(Vec<DisplayRecipientPrivateMessage>),
+    BasicRicipientData(serde_json::Map<String, serde_json::Value>),
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -129,12 +246,58 @@ pub struct DisplayRecipientPrivateMessage {
     is_mirror_dummy: bool,
 }
 
+/// A historical edit of a message.
+#[derive(Deserialize, Debug)]
+pub struct EditHistory {
+    /// The time for the edit.
+    #[serde(with = "chrono::serde::ts_seconds")]
+    pub timestamp: DateTime<Utc>,
+    /// The ID of the user that made the edit.
+    ///
+    /// Will be `None` only for edit history events predating March 2017.
+    /// Clients can display edit history events where this `None` as modified by either the sender
+    /// (for content edits) or an unknown user (for topic edits).
+    pub user_id: Option<u64>,
+    /// The content of the message immediately prior to this edit event.
+    ///
+    /// Only present if message's content was edited.
+    pub prev_content: Option<String>,
+    /// The rendered HTML representation of prev_content.
+    ///
+    /// Only present if message's content was edited.
+    pub prev_rendered_content: Option<String>,
+    /// The Markdown processor version number for the message immediately prior to this edit event.
+    ///
+    /// Only present if message's content was edited.
+    pub prev_rendered_content_version: Option<u64>,
+    /// The ID of the stream containing the message immediately after this edit event.
+    ///
+    /// Only present if message's stream was edited.
+    pub stream: Option<u64>,
+    /// The stream ID of the message immediately prior to this edit event.
+    ///
+    /// Only present if message's stream was edited.
+    pub prev_stream: Option<u64>,
+    /// The topic of the message immediately after this edit event.
+    ///
+    /// Only present if message's topic was edited.
+    ///
+    /// New in Zulip 5.0 (feature level 118).
+    pub topic: Option<String>,
+    /// The topic of the message immediately prior to this edit event.
+    ///
+    /// Only present if message's topic was edited.
+    #[serde(alias = "prev_subject")]
+    pub prev_topic: Option<String>,
+}
+
+/// A reaction to a message.
 #[derive(Serialize, Deserialize, Debug)]
 pub struct Reaction {
     emoji_code: String,
     emoji_name: String,
     reaction_type: String,
-    user_id: i64,
+    user_id: u64,
 }
 
 #[derive(Serialize, Debug)]
@@ -247,6 +410,7 @@ impl RemoveEmojiReactionRequest {
 }
 
 #[derive(Serialize, Debug)]
+#[serde(rename_all = "snake_case")]
 pub enum ReactionType {
     UnicodeEmoji,
     RealmEmoji,
@@ -259,4 +423,26 @@ pub enum PropagateMode {
     ChangeOne,
     ChangeAll,
     ChangeLater,
+}
+
+fn deserialize_timestamp_to_option<'de, D: Deserializer<'de>>(
+    deserializer: D,
+) -> Result<Option<DateTime<Utc>>, D::Error> {
+    chrono::serde::ts_seconds::deserialize(deserializer).map(Option::Some)
+}
+
+fn serialize_as_json_str<S: Serializer, T: Serialize>(
+    value: &T,
+    serializer: S,
+) -> Result<S::Ok, S::Error> {
+    let ser_json =
+        serde_json::to_string(value).map_err(|e| <S::Error as serde::ser::Error>::custom(e))?;
+    // This is a real hack: If the serialized json happens to be a string, we don't want to include
+    // the quotes.
+    let relevant_str = if ser_json.starts_with('"') && ser_json.ends_with('"') {
+        &ser_json[1..ser_json.len() - 1]
+    } else {
+        &ser_json
+    };
+    serializer.serialize_str(&relevant_str)
 }

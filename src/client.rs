@@ -61,7 +61,8 @@ impl<T> Response<T> {
 /// Parse a JSON response from the server and convert it to a `Result<T>` where `T` is the type of
 /// the requested data.
 async fn parse_response<T: DeserializeOwned>(response: reqwest::Response) -> Result<T> {
-    serde_json::from_slice::<Response<T>>(&response.bytes().await?)?.into_result()
+    let bytes = response.bytes().await?;
+    serde_json::from_slice::<Response<T>>(&bytes)?.into_result()
 }
 
 pub struct Client {
@@ -81,10 +82,16 @@ impl Client {
         parse_response(response).await
     }
     pub async fn get_messages(&self, req: GetMessagesRequest) -> Result<GetMessagesResponse> {
-        let qs = serde_qs::to_string(&req).unwrap();
-        let narrow = serde_json::to_string(&req.narrow)?;
-        let qs = format!("/api/v1/messages?{}&narrow={}", qs, narrow);
-        let response = self.http_client(Method::GET, &qs).send().await?;
+        let response = {
+            let builder = self
+                .http_client(Method::GET, "/api/v1/messages")
+                .query(&req);
+            log::debug!(
+                "Request url: {}",
+                builder.try_clone().unwrap().build().unwrap().url()
+            );
+            builder.send().await?
+        };
         parse_response(response).await
     }
     pub async fn delete_message(&self, id: i64) -> Result<()> {
