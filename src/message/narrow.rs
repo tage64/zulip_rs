@@ -20,7 +20,7 @@ impl Narrow {
     /// # Example
     ///
     /// ```rust
-    /// use zulip::message::Narrow;
+    /// use zulib::message::Narrow;
     ///
     /// let narrow = Narrow::keyword("discrimination tree".to_string());
     /// assert_eq!(
@@ -45,7 +45,7 @@ impl Narrow {
     /// # Examples
     ///
     /// ```rust
-    /// use zulip::message::Narrow;
+    /// use zulib::message::Narrow;
     ///
     /// let q = "stream:lean4";
     /// assert_eq!(

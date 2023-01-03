@@ -1,5 +1,5 @@
 [package]
-name = "zulip"
+name = "zulib"
 version = "0.2.0"
 authors = ["nukr <nukrs.w@gmail.com>"]
 edition = "2018"

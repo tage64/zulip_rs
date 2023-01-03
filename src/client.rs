@@ -216,7 +216,7 @@ mod tests {
         });
         let client = test_client(server.address());
         let req = SendMessageRequest::Private {
-            to: "[8]".to_string(),
+            to: Identifier::Name("[8]".to_string()),
             content: "abc".to_string(),
         };
         let result = client.send_message(req).await;
@@ -233,7 +233,7 @@ mod tests {
         });
         let client = test_client(server.address());
         let req = SendMessageRequest::Stream {
-            to: "[8]".to_string(),
+            to: Identifier::Name("[8]".to_string()),
             topic: "test".to_string(),
             content: "abc".to_string(),
         };

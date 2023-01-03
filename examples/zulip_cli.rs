@@ -1,7 +1,7 @@
 use anyhow::*;
 use clap::Parser as _;
-use zulip::message::*;
-use zulip::stream::*;
+use zulib::message::*;
+use zulib::stream::*;
 
 #[derive(clap::Parser)]
 #[command(author, version, about)]
@@ -43,12 +43,12 @@ async fn main() -> Result<()> {
         .unwrap()
         .start()?;
 
-    let zuliprc = zulip::ZulipRc::parse_from_str(&std::fs::read_to_string(
+    let zuliprc = zulib::ZulipRc::parse_from_str(&std::fs::read_to_string(
         dirs::home_dir()
             .context("No home dir in which to find .zuliprc found.")?
             .join(".zuliprc"),
     )?)?;
-    let z_client = zulip::Client::new(zuliprc)?;
+    let z_client = zulib::Client::new(zuliprc)?;
 
     match args.command {
         Command::Ls(Ls::Messages(req)) => {
