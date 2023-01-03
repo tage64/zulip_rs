@@ -1,5 +1,7 @@
 use chrono::prelude::*;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
+mod narrow;
+pub use narrow::Narrow;
 
 #[derive(Deserialize, Debug)]
 pub struct SendMessageResponse {
@@ -21,7 +23,7 @@ pub enum SendMessageRequest {
     },
 }
 
-#[derive(Serialize, Debug)]
+#[derive(Serialize, Debug, Clone)]
 pub struct GetMessagesRequest {
     /// Anchor the fetching of new messages.
     #[serde(
@@ -97,7 +99,7 @@ impl GetMessagesRequest {
 ///
 /// `Anchor::Newest`, `Anchor::Oldest` and `Anchor::FirstUnread` are new in Zulip 3.0 (feature
 /// level 1).
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 pub enum Anchor {
     /// The most recent message.
     Newest,
@@ -120,20 +122,6 @@ impl Serialize for Anchor {
             Self::MessageId(x) => serializer.serialize_u64(*x),
         }
     }
-}
-
-/// A filter for Zulip messages.
-///
-/// A narrow is a set of filters for Zulip messages, that can be based on many different factors
-/// (like sender, stream, topic, search keywords, etc.). Narrows are used in various places in the
-/// the Zulip API (most importantly, in the API for fetching messages).
-///
-/// Read more about narrows [here](https://zulip.com/api/construct-narrow).
-#[derive(Serialize, Debug)]
-pub struct Narrow {
-    pub operand: String,
-    pub operator: String,
-    pub negated: bool,
 }
 
 /// The response of a get_messages request.

@@ -1,12 +1,26 @@
 use anyhow::*;
+use clap::Parser as _;
 use zulip::message::*;
 
 #[derive(clap::Parser)]
 #[command(author, version, about)]
-struct Args {}
+struct Args {
+    #[command(subcommand)]
+    command: Command,
+}
+
+#[derive(clap::Subcommand)]
+enum Command {
+    /// Get messages
+    Get {
+        /// Search query to narrow message search
+        search_query: Vec<String>,
+    },
+}
 
 #[tokio::main]
 async fn main() -> Result<()> {
+    let args = Args::parse();
     flexi_logger::Logger::try_with_str("info, zulip=debug")
         .unwrap()
         .start()?;
