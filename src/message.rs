@@ -1,45 +1,78 @@
 use chrono::prelude::*;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
+use std::str::FromStr;
 mod narrow;
 pub use narrow::Narrow;
 
+/// An identifier for E.G a stream or a message which both can be referenced by an integer or a
+/// name.
+#[derive(Serialize, Debug, Clone)]
+#[serde(untagged)]
+pub enum Identifier {
+    Id(u64),
+    Name(String),
+}
+
+impl From<String> for Identifier {
+    fn from(s: String) -> Self {
+        u64::from_str(&s).map(Self::Id).unwrap_or(Self::Name(s))
+    }
+}
+
+impl From<&str> for Identifier {
+    fn from(s: &str) -> Self {
+        u64::from_str(s)
+            .map(Self::Id)
+            .unwrap_or_else(|_| Self::Name(s.to_string()))
+    }
+}
+
 #[derive(Deserialize, Debug)]
 pub struct SendMessageResponse {
-    pub id: i64,
+    pub id: u64,
     pub msg: String,
 }
 
-#[derive(Serialize, Debug)]
+/// Send a message.
+#[derive(Serialize, Debug, clap::Subcommand)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum SendMessageRequest {
+    /// Make a message to a stream.
     Stream {
-        to: String,
+        /// Stream ID (integer), or stream name.
+        to: Identifier,
         topic: String,
+        /// The content in markdown.
         content: String,
     },
+    /// Make a private message.
     Private {
-        to: String,
+        /// Either a user ID (integer), or a user name.
+        to: Identifier,
+        /// The content as markdown.
         content: String,
     },
 }
 
-#[derive(Serialize, Debug, Clone)]
+/// Get one or many messages.
+#[derive(Serialize, Debug, Clone, clap::Parser)]
 pub struct GetMessagesRequest {
     /// Anchor the fetching of new messages.
-    #[serde(
-        serialize_with = "serialize_as_json_str",
-        skip_serializing_if = "Option::is_none"
-    )]
-    pub anchor: Option<Anchor>,
+    #[serde(serialize_with = "serialize_as_json_str")]
+    #[clap(short = 'c', long, value_enum, default_value_t = Anchor::Newest)]
+    pub anchor: Anchor,
     /// Whether a message with the specified ID matching the narrow should be included.
     ///
     /// New in Zulip 6.0 (feature level 155).
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[clap(short, long)]
     pub include_anchor: Option<bool>,
     /// The number of messages with IDs less than the anchor to retrieve.
-    pub num_before: i64,
+    #[clap(short = 'b', long, default_value_t = 5)]
+    pub num_before: u64,
     /// The number of messages with IDs greater than the anchor to retrieve.
-    pub num_after: i64,
+    #[clap(short = 'a', long, default_value_t = 5)]
+    pub num_after: u64,
     /// The narrow (set of message filters) where you want to fetch the messages from.
     ///
     /// Note that many narrows, including all that lack a stream or streams operator, search the
@@ -56,6 +89,7 @@ pub struct GetMessagesRequest {
         serialize_with = "serialize_as_json_str",
         skip_serializing_if = "Option::is_none"
     )]
+    #[clap(value_parser = |s: &str| anyhow::Ok(Narrow::parse(s)))]
     pub narrow: Option<Vec<Narrow>>,
     /// Whether the client supports computing gravatars URLs.
     ///
@@ -65,18 +99,37 @@ pub struct GetMessagesRequest {
     /// of user data, since gravatar URLs are long, random strings and thus do not compress well.
     ///
     /// The client_gravatar field should be set to true if clients can compute their own gravatars.
+    #[clap(skip = true)]
     pub client_gravatar: bool,
     /// Convert the content from markdown to HTML on the server.
     ///
     /// If true, message content is returned in the rendered HTML format. If false, message content
     /// is returned in the raw Markdown-format text that user entered.
+    #[clap(long)]
     pub apply_markdown: bool,
 }
 
+/// Type of anchor when retreiving messages.
+///
+/// `Anchor::Newest`, `Anchor::Oldest` and `Anchor::FirstUnread` are new in Zulip 3.0 (feature
+/// level 1).
+#[derive(Debug, Clone, Copy, clap::ValueEnum)]
+pub enum Anchor {
+    /// The most recent message.
+    Newest,
+    /// The oldest message.
+    Oldest,
+    /// The oldest unread message matching the query, if any; otherwise, the most recent message.
+    FirstUnread,
+    /// Integer message ID to anchor fetching of new messages.
+    #[clap(skip)]
+    MessageId(u64),
+}
+
 impl GetMessagesRequest {
-    pub fn new(num_before: i64, num_after: i64) -> Self {
+    pub fn new(num_before: u64, num_after: u64) -> Self {
         Self {
-            anchor: Some(Anchor::Newest),
+            anchor: Anchor::Newest,
             num_before,
             num_after,
             narrow: None,
@@ -86,29 +139,13 @@ impl GetMessagesRequest {
         }
     }
     pub fn anchor(&mut self, anchor: Anchor) -> &mut Self {
-        self.anchor = Some(anchor);
+        self.anchor = anchor;
         self
     }
     pub fn narrow(&mut self, narrow: Vec<Narrow>) -> &mut Self {
         self.narrow = Some(narrow);
         self
     }
-}
-
-/// Type of anchor when retreiving messages.
-///
-/// `Anchor::Newest`, `Anchor::Oldest` and `Anchor::FirstUnread` are new in Zulip 3.0 (feature
-/// level 1).
-#[derive(Debug, Clone, Copy)]
-pub enum Anchor {
-    /// The most recent message.
-    Newest,
-    /// The oldest message.
-    Oldest,
-    /// The oldest unread message matching the query, if any; otherwise, the most recent message.
-    FirstUnread,
-    /// Integer message ID to anchor fetching of new messages.
-    MessageId(u64),
 }
 
 impl Serialize for Anchor {
@@ -152,6 +189,9 @@ pub struct GetMessagesResponse {
 pub struct ReceivedMessage {
     /// The unique message ID. Messages should always be displayed sorted by ID.
     pub id: u64,
+    /// The UNIX timestamp for when the message was sent, in UTC seconds.
+    #[serde(with = "chrono::serde::ts_seconds")]
+    pub timestamp: DateTime<Utc>,
     /// The content/body of the message.
     pub content: String,
     /// The HTTP content_type for the message content. This will be text/html or text/x-markdown,
@@ -165,9 +205,6 @@ pub struct ReceivedMessage {
     pub client: String,
     /// Data of the recipient of the message.
     pub display_recipient: DisplayRecipient,
-    /// The UNIX timestamp for when the message was sent, in UTC seconds.
-    #[serde(with = "chrono::serde::ts_seconds")]
-    pub timestamp: DateTime<Utc>,
     /// The time for when the message was last edited.
     ///
     /// `None` if the message has never been edited.

@@ -1,4 +1,5 @@
 use crate::message::*;
+use crate::stream::*;
 use crate::ZulipRc;
 use reqwest::{Method, RequestBuilder};
 use serde::{de::DeserializeOwned, Deserialize};
@@ -82,16 +83,11 @@ impl Client {
         parse_response(response).await
     }
     pub async fn get_messages(&self, req: GetMessagesRequest) -> Result<GetMessagesResponse> {
-        let response = {
-            let builder = self
-                .http_client(Method::GET, "/api/v1/messages")
-                .query(&req);
-            log::debug!(
-                "Request url: {}",
-                builder.try_clone().unwrap().build().unwrap().url()
-            );
-            builder.send().await?
-        };
+        let response = self
+            .http_client(Method::GET, "/api/v1/messages")
+            .query(&req)
+            .send()
+            .await?;
         parse_response(response).await
     }
     pub async fn delete_message(&self, id: i64) -> Result<()> {
@@ -133,6 +129,35 @@ impl Client {
             .send()
             .await?;
         parse_response(response).await
+    }
+
+    pub async fn get_subscribed_streams(&self) -> Result<Vec<Subscription>> {
+        let response = self
+            .http_client(Method::GET, "/api/v1/users/me/subscriptions")
+            .send()
+            .await?;
+        parse_response(response).await
+    }
+
+    /// Get all the topics in a specific stream
+    pub async fn get_topics_in_stream(&self, stream_id: u64) -> Result<Vec<Topic>> {
+        let response = self
+            .http_client(Method::GET, &format!("/api/v1/users/me/{stream_id}/topics"))
+            .send()
+            .await?;
+        parse_response(response).await
+    }
+
+    /// Get the unique ID of a given stream.
+    pub async fn get_stream_id(&self, stream_name: &str) -> Result<u64> {
+        let response = self
+            .http_client(Method::GET, "/api/v1/get_stream_id")
+            .query(&[("stream", stream_name)])
+            .send()
+            .await?;
+        parse_response::<StreamId>(response)
+            .await
+            .map(|x| x.stream_id)
     }
     fn http_client(&self, method: Method, endpoint: &str) -> RequestBuilder {
         let client = reqwest::Client::new();
