@@ -63,6 +63,8 @@ impl<T> Response<T> {
 /// the requested data.
 async fn parse_response<T: DeserializeOwned>(response: reqwest::Response) -> Result<T> {
     let bytes = response.bytes().await?;
+    // Uncomment the below line if you want to se the response in the log.
+    //log::debug!("Received responce: {}", String::from_utf8_lossy(&bytes));
     serde_json::from_slice::<Response<T>>(&bytes)?.into_result()
 }
 
@@ -131,12 +133,27 @@ impl Client {
         parse_response(response).await
     }
 
+    /// Get information about all streams that the user is subscribed to.
     pub async fn get_subscribed_streams(&self) -> Result<Vec<Subscription>> {
         let response = self
             .http_client(Method::GET, "/api/v1/users/me/subscriptions")
             .send()
             .await?;
-        parse_response(response).await
+        parse_response::<GetSubscribedStreamsResponse>(response)
+            .await
+            .map(|x| x.subscriptions)
+    }
+
+    /// Get a list of streams based on some options.
+    pub async fn get_streams(&self, req: &GetStreamsRequest) -> Result<Vec<Stream>> {
+        let response = self
+            .http_client(Method::GET, "/api/v1/streams")
+            .query(req)
+            .send()
+            .await?;
+        parse_response::<GetStreamsResponse>(response)
+            .await
+            .map(|x| x.streams)
     }
 
     /// Get all the topics in a specific stream
@@ -145,7 +162,9 @@ impl Client {
             .http_client(Method::GET, &format!("/api/v1/users/me/{stream_id}/topics"))
             .send()
             .await?;
-        parse_response(response).await
+        parse_response::<TopicsInStreamResponse>(response)
+            .await
+            .map(|x| x.topics)
     }
 
     /// Get the unique ID of a given stream.

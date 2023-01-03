@@ -185,7 +185,7 @@ pub struct GetMessagesResponse {
     pub messages: Vec<ReceivedMessage>,
 }
 
-#[derive(Deserialize, Debug)]
+#[derive(Deserialize, Debug, Clone)]
 pub struct ReceivedMessage {
     /// The unique message ID. Messages should always be displayed sorted by ID.
     pub id: u64,
@@ -247,7 +247,7 @@ pub struct ReceivedMessage {
     pub match_subject: Option<String>,
 }
 
-#[derive(Deserialize, Debug)]
+#[derive(Deserialize, Debug, Clone, Copy, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum MessageType {
     Private,
@@ -255,7 +255,7 @@ pub enum MessageType {
 }
 
 /// Data of the recipient of a message.
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Deserialize, Debug, Clone)]
 #[serde(untagged)]
 pub enum DisplayRecipient {
     Stream(String),
@@ -263,16 +263,16 @@ pub enum DisplayRecipient {
     BasicRicipientData(serde_json::Map<String, serde_json::Value>),
 }
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Deserialize, Debug, Clone)]
 pub struct DisplayRecipientPrivateMessage {
-    id: i64,
-    email: String,
-    full_name: String,
-    is_mirror_dummy: bool,
+    pub id: i64,
+    pub email: String,
+    pub full_name: String,
+    pub is_mirror_dummy: bool,
 }
 
 /// A historical edit of a message.
-#[derive(Deserialize, Debug)]
+#[derive(Deserialize, Debug, Clone)]
 pub struct EditHistory {
     /// The time for the edit.
     #[serde(with = "chrono::serde::ts_seconds")]
@@ -317,12 +317,12 @@ pub struct EditHistory {
 }
 
 /// A reaction to a message.
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Deserialize, Debug, Clone)]
 pub struct Reaction {
-    emoji_code: String,
-    emoji_name: String,
-    reaction_type: String,
-    user_id: u64,
+    pub emoji_code: String,
+    pub emoji_name: String,
+    pub reaction_type: String,
+    pub user_id: u64,
 }
 
 #[derive(Serialize, Debug)]

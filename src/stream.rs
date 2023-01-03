@@ -1,11 +1,44 @@
 //! Types for requests and responses about streams.
 use chrono::prelude::*;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use serde_repr::Deserialize_repr;
 
+/// Get a list of streams.
+#[derive(Serialize, clap::Parser, Debug, Clone)]
+pub struct GetStreamsRequest {
+    /// Toggle inclusion of all public streams.
+    #[clap(short = 'p', long="no-include-public", action = clap::ArgAction::SetFalse)]
+    pub include_public: bool,
+    /// Include all web-public streams.
+    #[clap(short = 'w', long)]
+    pub include_web_public: bool,
+    /// Toggle inclusion of all streams that the user is subscribed to.
+    #[clap(short = 's', long="no-include-subscribed", action = clap::ArgAction::SetFalse)]
+    pub include_subscribed: bool,
+    /// Include all active streams. The user must have administrative privileges to use this
+    /// parameter.
+    #[clap(short = 'a', long)]
+    pub include_active: bool,
+    /// Include all default streams for the user's realm.
+    #[clap(short = 'd', long)]
+    pub include_default: bool,
+    /// If the user is a bot, include all streams that the bot's owner is subscribed to.
+    #[clap(short = 'o', long)]
+    pub include_owner_subscribed: bool,
+}
+
+/// A wrapper around the response from the get_streams request.
+#[derive(Deserialize, Debug)]
+pub(crate) struct GetStreamsResponse {
+    pub streams: Vec<Stream>,
+}
+
+/// Information about a stream.
+///
+/// Can be fetched with `crate::Client::get_streams`.
 #[derive(Deserialize, Debug, Clone)]
-pub struct Subscription {
-    ///
+pub struct Stream {
+    /// The id of the stream.
     pub stream_id: u64,
     /// The name of a stream.
     pub name: String,
@@ -26,6 +59,43 @@ pub struct Subscription {
     /// Specifies whether the stream is private or not. Only people who have been invited can
     /// access a private stream.
     pub invite_only: bool,
+    /// Policy for which users can post messages to the stream.
+    pub stream_post_policy: StreamPostPolicy,
+    /// Number of days that messages sent to this stream will be stored before being automatically
+    /// deleted by the message retention policy.
+    ///
+    /// There are two special values:
+    /// - `None`, the default, means the stream will inherit the organization level setting.
+    /// - -1 encodes retaining messages in this stream forever.
+    pub message_retention_days: Option<i64>,
+    /// Whether the history of the stream is public to its subscribers.
+    pub history_public_to_subscribers: bool,
+    /// The ID of the first message in the stream.
+    ///
+    /// Intended to help clients determine whether they need to display UI like the "more topics"
+    /// widget that would suggest the stream has older history that can be accessed.
+    /// `None` is used for streams with no message history.
+    pub first_message_id: Option<u64>,
+    /// The average number of messages sent to the stream in recent weeks, rounded to the nearest
+    /// integer.
+    ///
+    /// `None` means the stream was recently created and there is insufficient data to estimate the
+    /// average traffic.
+    pub stream_weekly_trafic: Option<u64>,
+    /// ID of the user group whose members are allowed to unsubscribe others from the stream.
+    ///
+    /// New in Zulip 6.0 (feature level 142), will be `None` if not present.
+    pub can_remove_subscribers: Option<u64>,
+}
+
+/// Information about a stream the user is subscribed to.
+///
+/// Can be requested with `crate::Client::get_subscribed_streams`.
+#[derive(Deserialize, Debug, Clone)]
+pub struct Subscription {
+    /// Information about the stream, not specific to the user.
+    #[serde(flatten)]
+    pub stream: Stream,
     /// A boolean specifying whether desktop notifications are enabled for the given stream.
     ///
     /// A `None` value means the value of this setting should be inherited from the user-level
@@ -64,33 +134,11 @@ pub struct Subscription {
     pub is_web_public: bool,
     /// The user's personal color for the stream.
     pub color: String,
-    /// Policy for which users can post messages to the stream.
-    pub stream_post_policy: StreamPostPolicy,
-    /// Number of days that messages sent to this stream will be stored before being automatically
-    /// deleted by the message retention policy.
-    ///
-    /// There are two special values:
-    /// - `None`, the default, means the stream will inherit the organization level setting.
-    /// - -1 encodes retaining messages in this stream forever.
-    pub message_retention_days: Option<i64>,
-    /// Whether the history of the stream is public to its subscribers.
-    pub history_public_to_subscribers: bool,
-    /// The ID of the first message in the stream.
-    ///
-    /// Intended to help clients determine whether they need to display UI like the "more topics"
-    /// widget that would suggest the stream has older history that can be accessed.
-    /// `None` is used for streams with no message history.
-    pub first_message_id: Option<u64>,
-    /// The average number of messages sent to the stream in recent weeks, rounded to the nearest
-    /// integer.
-    ///
-    /// `None` means the stream was recently created and there is insufficient data to estimate the
-    /// average traffic.
-    pub stream_weekly_trafic: Option<u64>,
-    /// ID of the user group whose members are allowed to unsubscribe others from the stream.
-    ///
-    /// New in Zulip 6.0 (feature level 142), will be `None` if not present.
-    pub can_remove_subscribers: Option<u64>,
+}
+
+#[derive(Deserialize, Debug)]
+pub(crate) struct GetSubscribedStreamsResponse {
+    pub subscriptions: Vec<Subscription>,
 }
 
 /// Policy levels for posting messages to a stream.
@@ -107,12 +155,17 @@ pub enum StreamPostPolicy {
     OnlyModerators = 4,
 }
 
-#[derive(Deserialize, Debug, Clone)]
+#[derive(Deserialize, Debug, Clone, PartialEq, PartialOrd, Eq, Ord)]
 pub struct Topic {
-    /// The name of the topic.
-    pub name: String,
     /// The message ID of the last message sent to this topic.
     pub max_id: u64,
+    /// The name of the topic.
+    pub name: String,
+}
+
+#[derive(Deserialize, Debug)]
+pub(crate) struct TopicsInStreamResponse {
+    pub topics: Vec<Topic>,
 }
 
 #[derive(Deserialize, Debug)]
