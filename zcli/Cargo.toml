@@ -1,0 +1,14 @@
+[package]
+name = "zcli"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+anyhow = "1.0.68"
+clap = { version = "4.0.32", features = ["derive"] }
+dirs = "4.0.0"
+flexi_logger = "0.24.2"
+tokio = { version = "1.23.0", features = ["full"] }
+zulib = { version = "0.2.0", path = "../zulib" }
