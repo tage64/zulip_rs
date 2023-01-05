@@ -1,5 +1,5 @@
 [workspace]
-members = ["zulib", "zcli"]
+members = ["zulib", "zcli", "clap-repl"]
 resolver = "2"
 
 [workspace.dependencies]

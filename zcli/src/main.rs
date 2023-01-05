@@ -1,5 +1,6 @@
 use anyhow::*;
 use clap::Parser as _;
+use std::ops::ControlFlow;
 use zulib::message::*;
 use zulib::stream::*;
 
@@ -7,7 +8,16 @@ use zulib::stream::*;
 #[command(author, version, about)]
 struct Args {
     #[command(subcommand)]
-    command: Command,
+    command: CommandOrRepl,
+}
+
+#[derive(clap::Subcommand)]
+enum CommandOrRepl {
+    #[clap(flatten)]
+    Command(Command),
+    /// Run a repl interactively instead of providing a command directly.
+    #[clap(short_flag = 'i')]
+    Repl,
 }
 
 #[derive(clap::Subcommand)]
@@ -96,6 +106,40 @@ impl Command {
     }
 }
 
+impl CommandOrRepl {
+    async fn run(self, mut z_client: zulib::Client) -> Result<()> {
+        match self {
+            Self::Command(x) => x.run(&z_client).await,
+            Self::Repl => {
+                clap_repl::run_repl(
+                    "(zcli) ",
+                    |x, y| Box::pin(ReplCommand::run(x, y)),
+                    &mut z_client,
+                )
+                .await
+            }
+        }
+    }
+}
+
+#[derive(clap::Subcommand)]
+enum ReplCommand {
+    #[clap(flatten)]
+    Command(Command),
+    /// Quit the repl.
+    #[clap(visible_aliases = &["q", "exit"])]
+    Quit,
+}
+
+impl ReplCommand {
+    async fn run(self, z_client: &mut zulib::Client) -> Result<ControlFlow<(), ()>> {
+        match self {
+            Self::Command(x) => x.run(z_client).await.map(ControlFlow::Continue),
+            Self::Quit => Ok(ControlFlow::Break(())),
+        }
+    }
+}
+
 #[tokio::main]
 async fn main() -> Result<()> {
     let args = Args::parse();
@@ -110,5 +154,5 @@ async fn main() -> Result<()> {
     )?)?;
     let z_client = zulib::Client::new(zuliprc)?;
 
-    args.command.run(&z_client).await
+    args.command.run(z_client).await
 }

@@ -8,6 +8,7 @@ edition = "2021"
 [dependencies]
 anyhow = "1.0.68"
 clap = { workspace = true, features = ["derive"] }
+clap-repl = { version = "0.1.0", path = "../clap-repl" }
 dirs = "4.0.0"
 flexi_logger = "0.24.2"
 tokio = { version = "1.23.0", features = ["rt", "macros", "rt-multi-thread"], default-features = false }
