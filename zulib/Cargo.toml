@@ -12,7 +12,7 @@ repository = "https://github.com/nukr/zulip_rs"
 [dependencies]
 anyhow = "1.0.68"
 chrono = { version = "0.4.23", features = ["serde"], default-features = false }
-clap = { version = "4.0.32", features = ["derive"] }
+clap = { workspace = true, features = ["derive"] }
 log = "0.4"
 pest = "2.1"
 pest_derive = "2.1"

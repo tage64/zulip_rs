@@ -1,31 +1,8 @@
+use crate::Identifier;
 use chrono::prelude::*;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
-use std::str::FromStr;
 mod narrow;
 pub use narrow::Narrow;
-
-/// An identifier for E.G a stream or a message which both can be referenced by an integer or a
-/// name.
-#[derive(Serialize, Debug, Clone)]
-#[serde(untagged)]
-pub enum Identifier {
-    Id(u64),
-    Name(String),
-}
-
-impl From<String> for Identifier {
-    fn from(s: String) -> Self {
-        u64::from_str(&s).map(Self::Id).unwrap_or(Self::Name(s))
-    }
-}
-
-impl From<&str> for Identifier {
-    fn from(s: &str) -> Self {
-        u64::from_str(s)
-            .map(Self::Id)
-            .unwrap_or_else(|_| Self::Name(s.to_string()))
-    }
-}
 
 #[derive(Deserialize, Debug)]
 pub struct SendMessageResponse {
@@ -34,7 +11,7 @@ pub struct SendMessageResponse {
 }
 
 /// Send a message.
-#[derive(Serialize, Debug, clap::Subcommand)]
+#[derive(Serialize, Debug, clap::Parser)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum SendMessageRequest {
     /// Make a message to a stream.

@@ -32,8 +32,68 @@ enum Ls {
     #[clap(short_flag = 't')]
     Topics {
         /// The name or id of the stream.
-        stream: Identifier,
+        stream: zulib::Identifier,
     },
+}
+
+impl Ls {
+    async fn run(self, z_client: &zulib::Client) -> Result<()> {
+        match self {
+            Ls::Messages(req) => {
+                let mut messages = z_client.get_messages(req).await?.messages;
+                messages.sort_by_key(|x| x.id);
+                for message in messages {
+                    println!("From: {} - {}", message.sender_full_name, message.timestamp);
+                    println!("Subject: {}", message.subject);
+                    println!("{}\n", message.content);
+                }
+            }
+            Ls::Streams(req) => {
+                let streams = z_client.get_streams(&req).await?;
+                for stream in streams {
+                    println!("{} -- {}", stream.name, stream.description);
+                }
+            }
+            Ls::Subscribed => {
+                let subscriptions = z_client.get_subscribed_streams().await?;
+                for subscription in subscriptions {
+                    println!(
+                        "{} -- {}",
+                        subscription.stream.name,
+                        if subscription.is_muted {
+                            "Muted"
+                        } else {
+                            "Unmuted"
+                        }
+                    );
+                }
+            }
+            Ls::Topics { stream } => {
+                let stream_id = match stream {
+                    zulib::Identifier::Id(x) => x,
+                    zulib::Identifier::Name(x) => z_client.get_stream_id(&x).await?,
+                };
+                let mut topics = z_client.get_topics_in_stream(stream_id).await?;
+                topics.sort();
+                for Topic { name, .. } in topics {
+                    println!("{name}");
+                }
+            }
+        }
+        Ok(())
+    }
+}
+
+impl Command {
+    async fn run(self, z_client: &zulib::Client) -> Result<()> {
+        match self {
+            Command::Ls(x) => x.run(z_client).await?,
+            Command::Send(req) => {
+                println!("Sending: {req:?}");
+            }
+        }
+        Ok(())
+    }
 }
 
 #[tokio::main]
@@ -50,51 +110,5 @@ async fn main() -> Result<()> {
     )?)?;
     let z_client = zulib::Client::new(zuliprc)?;
 
-    match args.command {
-        Command::Ls(Ls::Messages(req)) => {
-            let mut messages = z_client.get_messages(req).await?.messages;
-            messages.sort_by_key(|x| x.id);
-            for message in messages {
-                println!("From: {} - {}", message.sender_full_name, message.timestamp);
-                println!("Subject: {}", message.subject);
-                println!("{}\n", message.content);
-            }
-        }
-        Command::Ls(Ls::Streams(req)) => {
-            let streams = z_client.get_streams(&req).await?;
-            for stream in streams {
-                println!("{} -- {}", stream.name, stream.description);
-            }
-        }
-        Command::Ls(Ls::Subscribed) => {
-            let subscriptions = z_client.get_subscribed_streams().await?;
-            for subscription in subscriptions {
-                println!(
-                    "{} -- {}",
-                    subscription.stream.name,
-                    if subscription.is_muted {
-                        "Muted"
-                    } else {
-                        "Unmuted"
-                    }
-                );
-            }
-        }
-        Command::Ls(Ls::Topics { stream }) => {
-            let stream_id = match stream {
-                Identifier::Id(x) => x,
-                Identifier::Name(x) => z_client.get_stream_id(&x).await?,
-            };
-            let mut topics = z_client.get_topics_in_stream(stream_id).await?;
-            topics.sort();
-            for Topic { name, .. } in topics {
-                println!("{name}");
-            }
-        }
-        Command::Send(req) => {
-            println!("Sending: {req:?}");
-            //z_client.send_message(req).await?;
-        }
-    }
-    Ok(())
+    args.command.run(&z_client).await
 }

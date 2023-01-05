@@ -76,6 +76,7 @@ impl Client {
     pub fn new(rc: ZulipRc) -> anyhow::Result<Self> {
         Ok(Self { rc })
     }
+
     pub async fn send_message(&self, req: SendMessageRequest) -> Result<SendMessageResponse> {
         let response = self
             .http_client(Method::POST, "/api/v1/messages")
