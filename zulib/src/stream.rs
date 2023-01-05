@@ -27,6 +27,19 @@ pub struct GetStreamsRequest {
     pub include_owner_subscribed: bool,
 }
 
+impl Default for GetStreamsRequest {
+    fn default() -> Self {
+        Self {
+            include_public: true,
+            include_web_public: false,
+            include_subscribed: true,
+            include_active: false,
+            include_default: false,
+            include_owner_subscribed: false,
+        }
+    }
+}
+
 /// A wrapper around the response from the get_streams request.
 #[derive(Deserialize, Debug)]
 pub(crate) struct GetStreamsResponse {

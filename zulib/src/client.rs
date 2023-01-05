@@ -70,11 +70,15 @@ async fn parse_response<T: DeserializeOwned>(response: reqwest::Response) -> Res
 
 pub struct Client {
     rc: ZulipRc,
+    http_client: reqwest::Client,
 }
 
 impl Client {
     pub fn new(rc: ZulipRc) -> anyhow::Result<Self> {
-        Ok(Self { rc })
+        Ok(Self {
+            rc,
+            http_client: reqwest::Client::new(),
+        })
     }
 
     pub async fn send_message(&self, req: SendMessageRequest) -> Result<SendMessageResponse> {
@@ -180,9 +184,8 @@ impl Client {
             .map(|x| x.stream_id)
     }
     fn http_client(&self, method: Method, endpoint: &str) -> RequestBuilder {
-        let client = reqwest::Client::new();
         let url = format!("{}{}", &self.rc.site, endpoint);
-        client
+        self.http_client
             .request(method, url)
             .basic_auth(&self.rc.email, Some(&self.rc.key))
             .header("application", "x-www-form-urlencoded")

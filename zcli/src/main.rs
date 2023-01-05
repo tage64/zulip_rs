@@ -34,7 +34,13 @@ enum Command {
 #[derive(clap::Subcommand)]
 enum Ls {
     #[clap(short_flag = 'm')]
-    Messages(GetMessagesRequest),
+    Messages {
+        #[clap(flatten)]
+        req: GetMessagesRequest,
+        /// Only print the name of all topics and the timestamp of their last message.
+        #[clap(short, long)]
+        only_topics: bool,
+    },
     #[clap(short_flag = 's')]
     Streams(GetStreamsRequest),
     /// Get all subscribed streams.
@@ -51,7 +57,68 @@ enum Ls {
 impl Ls {
     async fn run(self, z_client: &zulib::Client) -> Result<()> {
         match self {
-            Ls::Messages(req) => {
+            Ls::Messages {
+                mut req,
+                only_topics,
+            } => {
+                if let Some(narrows) = req.narrow.as_mut() {
+                    let mut stream = None;
+                    for Narrow {
+                        operator, operand, ..
+                    } in narrows.iter_mut()
+                    {
+                        if operator == "stream" {
+                            let re = regex::RegexBuilder::new(operand)
+                                .case_insensitive(true)
+                                .build()?;
+                            let streams = z_client.get_streams(&Default::default()).await?;
+                            let mut matching_streams =
+                                streams.into_iter().filter(|x| re.is_match(&x.name));
+                            let Some(stream1) = matching_streams.next() else {
+                                bail!("No stream matching the regular expression {operand}");
+                            };
+                            if let Some(stream2) = matching_streams.next() {
+                                bail!(
+                                    "Multiple streams matched: {} and {} ...",
+                                    stream1.name,
+                                    stream2.name,
+                                );
+                            }
+                            *operand = stream1.name.clone();
+                            stream = Some(stream1.stream_id);
+                        } else if operator == "topic" {
+                            let re = regex::RegexBuilder::new(operand)
+                                .case_insensitive(true)
+                                .build()?;
+                            let topics = if let Some(stream) = stream {
+                                z_client.get_topics_in_stream(stream).await?
+                            } else {
+                                // Fetch all topics from all streams.
+                                let streams = z_client.get_streams(&Default::default()).await?;
+                                let mut topics = Vec::new();
+                                for stream in streams {
+                                    topics.extend(
+                                        z_client.get_topics_in_stream(stream.stream_id).await?,
+                                    );
+                                }
+                                topics
+                            };
+                            let mut matching_topics =
+                                topics.into_iter().filter(|x| re.is_match(&x.name));
+                            let Some(topic1) = matching_topics.next() else {
+                                bail!("No topic matching the regular expression {operand}");
+                            };
+                            if let Some(topic2) = matching_topics.next() {
+                                bail!(
+                                    "Multiple topics matched: {} and {} ...",
+                                    topic1.name,
+                                    topic2.name,
+                                );
+                            }
+                            *operand = topic1.name;
+                        }
+                    }
+                }
                 let messages = z_client.get_messages(req).await?.messages;
                 for (topic, messages) in messages
                     .into_iter()
@@ -61,28 +128,41 @@ impl Ls {
                     .map(|(k, v)| (k, v.into_iter().sorted_unstable_by_key(|x| x.id)))
                     .sorted_unstable_by_key(|(_, msgs)| msgs.as_slice()[0].id)
                 {
-                    println!("\n----------");
-                    println!("{topic}:");
-                    for message in messages {
+                    if only_topics {
                         println!(
-                            "  - {} -- {}",
-                            message.sender_full_name,
-                            HumanTime::from(message.timestamp)
+                            "{}: {topic}: {}, {} messages",
+                            match &messages.as_slice()[0].display_recipient {
+                                DisplayRecipient::Stream(s) => s.as_str(),
+                                _ => "private",
+                            },
+                            HumanTime::from(messages.as_slice()[0].timestamp),
+                            messages.as_slice().len()
                         );
-                        println!(
-                            "{}\n",
-                            textwrap::fill(
-                                &message.content,
-                                textwrap::Options::with_termwidth()
-                                    .initial_indent("    ")
-                                    .subsequent_indent("    ")
-                            )
-                        );
+                    } else {
+                        println!("\n----------");
+                        println!("{topic}:");
+                        for message in messages {
+                            println!(
+                                "  - {} -- {}",
+                                message.sender_full_name,
+                                HumanTime::from(message.timestamp)
+                            );
+                            println!(
+                                "{}\n",
+                                textwrap::fill(
+                                    &message.content,
+                                    textwrap::Options::with_termwidth()
+                                        .initial_indent("    ")
+                                        .subsequent_indent("    ")
+                                )
+                            );
+                        }
                     }
                 }
             }
             Ls::Streams(req) => {
-                let streams = z_client.get_streams(&req).await?;
+                let mut streams = z_client.get_streams(&req).await?;
+                streams.sort_unstable_by_key(|x| x.stream_weekly_trafic);
                 for stream in streams {
                     println!("{} -- {}", stream.name, stream.description);
                 }

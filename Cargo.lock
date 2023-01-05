@@ -2613,6 +2613,7 @@ dependencies = [
  "dirs",
  "flexi_logger",
  "iter_tools",
+ "regex",
  "textwrap",
  "tokio",
  "zulib",

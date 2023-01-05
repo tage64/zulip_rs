@@ -45,10 +45,10 @@ pub struct GetMessagesRequest {
     #[clap(short, long)]
     pub include_anchor: Option<bool>,
     /// The number of messages with IDs less than the anchor to retrieve.
-    #[clap(short = 'b', long, default_value_t = 5)]
+    #[clap(short = 'b', long, default_value_t = 10)]
     pub num_before: u64,
     /// The number of messages with IDs greater than the anchor to retrieve.
-    #[clap(short = 'a', long, default_value_t = 5)]
+    #[clap(short = 'a', long, default_value_t = 10)]
     pub num_after: u64,
     /// The narrow (set of message filters) where you want to fetch the messages from.
     ///
@@ -235,6 +235,7 @@ pub enum MessageType {
 #[derive(Deserialize, Debug, Clone)]
 #[serde(untagged)]
 pub enum DisplayRecipient {
+    /// The name of the stream the message was sent to.
     Stream(String),
     PrivateMessage(Vec<DisplayRecipientPrivateMessage>),
     BasicRicipientData(serde_json::Map<String, serde_json::Value>),
