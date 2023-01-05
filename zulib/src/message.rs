@@ -258,7 +258,7 @@ pub struct EditHistory {
     /// The ID of the user that made the edit.
     ///
     /// Will be `None` only for edit history events predating March 2017.
-    /// Clients can display edit history events where this `None` as modified by either the sender
+    /// RawClients can display edit history events where this `None` as modified by either the sender
     /// (for content edits) or an unknown user (for topic edits).
     pub user_id: Option<u64>,
     /// The content of the message immediately prior to this edit event.

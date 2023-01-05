@@ -1,39 +1,8 @@
 use crate::message::*;
 use crate::stream::*;
-use crate::ZulipRc;
+use crate::{Error, Result, ZulipRc};
 use reqwest::{Method, RequestBuilder};
 use serde::{de::DeserializeOwned, Deserialize};
-
-/// An error that might occur when making a reqwest to the Zulip server.
-#[derive(thiserror::Error, Debug)]
-pub enum Error {
-    /// A response from the server that the requested operation failed.
-    ///
-    /// This is usually a recoverable error. It might for instance occur when one tries to send a
-    /// message to a user that does not exist.
-    #[error("Unsuccessful: {code}, {msg}")]
-    Unsuccessful {
-        /// This is a short string acting as identifier for the error.
-        ///
-        /// It is named "code" in the API so we keep that name although it  might be a bit
-        /// confusing.
-        code: String,
-        /// A message from the server regarding the error.
-        msg: String,
-        /// A stream related to the error. Not applicable in most cases.
-        stream: Option<String>,
-    },
-
-    /// The parsing of the JSON data in the response body (from the server) failed.
-    #[error("Failed to parse response body")]
-    BadResponse(#[from] serde_json::Error),
-
-    /// A network/HTTP error from the reqwest crate.
-    #[error("Network/HTTP error")]
-    Network(#[from] reqwest::Error),
-}
-
-pub type Result<T, E = Error> = std::result::Result<T, E>;
 
 /// A response from the server in a unified format parameterized by the type of data we want to
 /// retrieve.
@@ -68,12 +37,12 @@ async fn parse_response<T: DeserializeOwned>(response: reqwest::Response) -> Res
     serde_json::from_slice::<Response<T>>(&bytes)?.into_result()
 }
 
-pub struct Client {
+pub struct RawClient {
     rc: ZulipRc,
     http_client: reqwest::Client,
 }
 
-impl Client {
+impl RawClient {
     pub fn new(rc: ZulipRc) -> anyhow::Result<Self> {
         Ok(Self {
             rc,
@@ -195,6 +164,7 @@ impl Client {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::*;
     use httpmock::{
         Method::{DELETE, GET, POST},
         MockServer,
@@ -202,8 +172,8 @@ mod tests {
     use std::net::SocketAddr;
 
     /// Creat a client for testing based on the socket address to the server.
-    fn test_client(socket_addr: &SocketAddr) -> Client {
-        Client::new(ZulipRc {
+    fn test_client(socket_addr: &SocketAddr) -> RawClient {
+        RawClient::new(ZulipRc {
             email: "me@example.com".to_string(),
             key: "testkey".to_string(),
             site: format!("http://{socket_addr}"),

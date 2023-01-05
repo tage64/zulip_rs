@@ -48,7 +48,7 @@ pub(crate) struct GetStreamsResponse {
 
 /// Information about a stream.
 ///
-/// Can be fetched with `crate::Client::get_streams`.
+/// Can be fetched with `crate::RawClient::get_streams`.
 #[derive(Deserialize, Debug, Clone)]
 pub struct Stream {
     /// The id of the stream.
@@ -103,7 +103,7 @@ pub struct Stream {
 
 /// Information about a stream the user is subscribed to.
 ///
-/// Can be requested with `crate::Client::get_subscribed_streams`.
+/// Can be requested with `crate::RawClient::get_subscribed_streams`.
 #[derive(Deserialize, Debug, Clone)]
 pub struct Subscription {
     /// Information about the stream, not specific to the user.
