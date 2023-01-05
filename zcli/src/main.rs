@@ -1,5 +1,7 @@
 use anyhow::*;
+use chrono_humanize::HumanTime;
 use clap::Parser as _;
+use iter_tools::Itertools as _;
 use std::ops::ControlFlow;
 use zulib::message::*;
 use zulib::stream::*;
@@ -50,12 +52,33 @@ impl Ls {
     async fn run(self, z_client: &zulib::Client) -> Result<()> {
         match self {
             Ls::Messages(req) => {
-                let mut messages = z_client.get_messages(req).await?.messages;
-                messages.sort_by_key(|x| x.id);
-                for message in messages {
-                    println!("From: {} - {}", message.sender_full_name, message.timestamp);
-                    println!("Subject: {}", message.subject);
-                    println!("{}\n", message.content);
+                let messages = z_client.get_messages(req).await?.messages;
+                for (topic, messages) in messages
+                    .into_iter()
+                    .into_grouping_map_by(|x| x.subject.clone())
+                    .collect::<Vec<_>>()
+                    .drain()
+                    .map(|(k, v)| (k, v.into_iter().sorted_unstable_by_key(|x| x.id)))
+                    .sorted_unstable_by_key(|(_, msgs)| msgs.as_slice()[0].id)
+                {
+                    println!("\n----------");
+                    println!("{topic}:");
+                    for message in messages {
+                        println!(
+                            "  - {} -- {}",
+                            message.sender_full_name,
+                            HumanTime::from(message.timestamp)
+                        );
+                        println!(
+                            "{}\n",
+                            textwrap::fill(
+                                &message.content,
+                                textwrap::Options::with_termwidth()
+                                    .initial_indent("    ")
+                                    .subsequent_indent("    ")
+                            )
+                        );
+                    }
                 }
             }
             Ls::Streams(req) => {

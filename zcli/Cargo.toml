@@ -7,9 +7,12 @@ edition = "2021"
 
 [dependencies]
 anyhow = "1.0.68"
+chrono-humanize = "0.2.2"
 clap = { workspace = true, features = ["derive"] }
 clap-repl = { version = "0.1.0", path = "../clap-repl" }
 dirs = "4.0.0"
 flexi_logger = "0.24.2"
+iter_tools = "0.1.4"
+textwrap = { version = "0.16.0", features = ["terminal_size"] }
 tokio = { version = "1.23.0", features = ["rt", "macros", "rt-multi-thread"], default-features = false }
 zulib = { version = "0.2.0", path = "../zulib" }
