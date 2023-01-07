@@ -1,5 +1,5 @@
 [workspace]
-members = ["zulib", "zcli", "clap-repl"]
+members = ["zulib", "zcli", "clap-repl", "common-cache"]
 resolver = "2"
 
 [workspace.dependencies]
@@ -7,3 +7,4 @@ clap = "4.0.32"
 
 [patch.crates-io]
 serde = { git = "https://github.com/tage64/serde" }
+cc-traits = { git = "https://github.com/tage64/cc-traits" }
