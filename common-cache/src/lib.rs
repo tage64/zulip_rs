@@ -1,4 +1,4 @@
-//! This is a small, fast on average, and intuative implementation of a cache-like structure,
+//! This is a small, fast on average, and quite intuative implementation of a cache-like structure,
 //! which keeps and promotes the most commonly and most recently used items.
 //!
 //! ## General characteristics
@@ -58,6 +58,9 @@ pub struct CommonCache<K, V, R: Rng = StdRng> {
     levels: Vec<Level<K, V>>,
     /// A random number generator.
     rng: R,
+
+    /// An upper bound of the number of elements in the cache. Might be set to `usize::MAX`.
+    max_size: usize,
 }
 
 /// A level in the cache.
@@ -71,19 +74,64 @@ struct Level<K, V> {
 
 impl<K, V> CommonCache<K, V> {
     /// Create a new `CommonCache` with a specific base and `Rng` generated from some entropy.
-    pub fn new(base: usize) -> Self {
-        Self::new_with_rng(base, StdRng::from_entropy())
+    ///
+    /// Takes a base which must be >1 and optionally a max_size which must be >=2.
+    pub fn new(base: usize, max_size: Option<usize>) -> Self {
+        Self::new_with_rng(base, max_size, StdRng::from_entropy())
+    }
+
+    /// Get the currently configured max size for the cache.
+    pub fn max_size(&self) -> usize {
+        self.max_size
+    }
+
+    /// Set the max size. Note that if this might cause many elements to be removed.
+    ///
+    /// PRE: max_size >= 2
+    ///
+    /// Runs in linear time if max_size < self.size(), constant time otherwise.
+    pub fn set_max_size(&mut self, max_size: usize) {
+        assert!(
+            max_size >= 2,
+            "max_size must be >=2 in CommonCache::set_max_size()"
+        );
+        if max_size >= self.max_size {
+            self.max_size = max_size;
+            return;
+        }
+        let mut sum = 0;
+        for (i, level) in self.levels.iter_mut().enumerate() {
+            if sum == max_size {
+                self.levels.truncate(i);
+                break;
+            }
+            sum += level.items.len();
+            if sum > max_size {
+                for _ in max_size..sum {
+                    let to_remove = self.rng.gen_range(0..level.items.len());
+                    level.items.swap_remove_index(to_remove);
+                }
+                self.levels.truncate(i + 1);
+                break;
+            }
+        }
     }
 }
 
 impl<K, V, R: Rng> CommonCache<K, V, R> {
     /// Create a new `CommonCache` with a given random generator. This can be useful if you have a
     /// psuedo random generator and want deterministic and reproduceable behaviour.
-    pub fn new_with_rng(base: usize, rng: R) -> Self {
+    ///
+    /// Also takes in a base which must be >1 and optionally a max_size which must be >=2.
+    pub fn new_with_rng(base: usize, max_size: Option<usize>, rng: R) -> Self {
+        let max_size = max_size.unwrap_or(usize::MAX);
+        assert!(max_size >= 2, "max_size in CommonCache must be >= 2");
+        assert!(base >= 2, "base in CommonCache must be >=2.");
         Self {
             base,
             rng,
             levels: Vec::new(),
+            max_size,
         }
     }
 
@@ -150,6 +198,16 @@ where
         value: V,
         level: usize,
     ) -> Entry<'_, K, V, R> {
+        if self.size() == self.max_size {
+            // If the max size has been reached.
+            let last_level_items = &mut self.levels.last_mut().unwrap().items;
+            let to_remove = self.rng.gen_range(0..last_level_items.len());
+            last_level_items.swap_remove_index(to_remove);
+            if last_level_items.is_empty() {
+                self.levels.pop();
+            }
+        }
+
         if self.levels.is_empty() {
             // If there are no levels, add one.
             self.levels.push(Level {
@@ -157,6 +215,7 @@ where
                 rand_range: (0..1).into(),
             });
         }
+
         // Loop through all levels from the lowest to the current (`level`).c For each level,
         // randomly decide whether to move one item down to the level below. The fuller a level is,
         // the higher probability it is that an item will be moved down from that level.
