@@ -7,4 +7,3 @@ clap = "4.0.32"
 
 [patch.crates-io]
 serde = { git = "https://github.com/tage64/serde" }
-cc-traits = { git = "https://github.com/tage64/cc-traits" }
