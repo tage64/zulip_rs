@@ -68,6 +68,7 @@ async fn parse_response<T: DeserializeOwned>(response: reqwest::Response) -> Res
     serde_json::from_slice::<Response<T>>(&bytes)?.into_result()
 }
 
+#[derive(Debug)]
 pub struct Client {
     rc: ZulipRc,
     http_client: reqwest::Client,
