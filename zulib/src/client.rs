@@ -184,6 +184,18 @@ impl Client {
             .await
             .map(|x| x.stream_id)
     }
+
+    /// Get a stream by id.
+    pub async fn get_stream_by_id(&self, id: u64) -> Result<Stream> {
+        let response = self
+            .http_client(Method::GET, &format!("/api/v1/streams/{id}"))
+            .send()
+            .await?;
+        parse_response::<GetStreamResponse>(response)
+            .await
+            .map(|x| x.stream)
+    }
+
     fn http_client(&self, method: Method, endpoint: &str) -> RequestBuilder {
         let url = format!("{}{}", &self.rc.site, endpoint);
         self.http_client

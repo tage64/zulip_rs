@@ -46,6 +46,12 @@ pub(crate) struct GetStreamsResponse {
     pub streams: Vec<Stream>,
 }
 
+/// A wrapper around the response from get_stream_by_id.
+#[derive(Deserialize, Debug)]
+pub(crate) struct GetStreamResponse {
+    pub stream: Stream,
+}
+
 /// Information about a stream.
 ///
 /// Can be fetched with `crate::Client::get_streams`.
