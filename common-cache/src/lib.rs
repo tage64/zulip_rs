@@ -42,8 +42,10 @@
 //! come after any element on a level below.
 use core::borrow::Borrow;
 use core::hash::Hash;
+use core::marker::PhantomData;
 use indexmap::IndexMap;
 use rand::prelude::*;
+use replace_with::replace_with_or_abort;
 
 /// A collection which keeps and promotes the most recently and commonly used items.
 ///
@@ -61,6 +63,13 @@ pub struct CommonCache<K, V, R: Rng = StdRng> {
 
     /// An upper bound of the number of elements in the cache. Might be set to `usize::MAX`.
     max_size: usize,
+
+    /// A counter that increments every time elements are moved between levels in the cache.
+    ///
+    /// Used to prevent that a `Index` might randomly be invalidated because some random element
+    /// has been moved to another level. Instead, an `Index` is invalid if the generation on the
+    /// index and the cache differs.
+    generation: u64,
 }
 
 /// A level in the cache.
@@ -90,6 +99,10 @@ impl<K, V> CommonCache<K, V> {
     /// PRE: max_size >= 2
     ///
     /// Runs in linear time if max_size < self.size(), constant time otherwise.
+    ///
+    /// If the new max_size is less than the previous, all indexes to this cache will be
+    /// invalidated. This is because some elements might be removed randomly from the cache and we
+    /// don't want some index lookup to randomly work/fail.
     pub fn set_max_size(&mut self, max_size: usize) {
         assert!(
             max_size >= 2,
@@ -115,6 +128,10 @@ impl<K, V> CommonCache<K, V> {
                 break;
             }
         }
+
+        // Some random elements might have been removed so let's increase the generation to
+        // invalidate any indexes to the cache.
+        self.generation += 1;
     }
 }
 
@@ -132,6 +149,7 @@ impl<K, V, R: Rng> CommonCache<K, V, R> {
             rng,
             levels: Vec::new(),
             max_size,
+            generation: 0,
         }
     }
 
@@ -155,6 +173,10 @@ where
     ///
     /// If the value exists in the cache already though, it will be updated with the new key and
     /// value and be moved to one level above its previous position.
+    ///
+    /// **IMPORTANT: All `Index` to elements in this cache will be invalidated** This is because
+    /// some random elements will be moved between levels in the cache, and we don't want indexes
+    /// to be invalidated randomly. It might cause some erroneous tests to pass undeterministicly.
     ///
     /// # Returns
     ///
@@ -192,12 +214,17 @@ where
     /// levels. If an item is selected at the lowest level, a new lowest level will be created.
     ///
     /// The function will of course also insert the given item at the given level.
+    ///
+    /// `self.generation` is increased, so all `Index`es to this cache are invalidated.
     fn insert_at_level<const CREATE_NEW_LEVEL_IF_NEEDED: bool>(
         &mut self,
         key: K,
         value: V,
         level: usize,
     ) -> Entry<'_, K, V, R> {
+        // Let's increment the generation immediately so we don't forget it.
+        self.generation += 1;
+
         if self.size() == self.max_size {
             // If the max size has been reached.
             let last_level_items = &mut self.levels.last_mut().unwrap().items;
@@ -295,6 +322,32 @@ where
     pub fn iter_mut(&mut self) -> impl Iterator<Item = (&'_ K, &'_ mut V)> {
         self.levels.iter_mut().flat_map(|x| x.items.iter_mut())
     }
+
+    /// Find the first item in the cache matching a predicate.
+    ///
+    /// The advantage of using this method over `self.iter().find()` is that you get an `Entry`
+    /// from this which can be used to promote or remove the item with.
+    pub fn find_first(
+        &mut self,
+        mut pred: impl FnMut(&K, &V) -> bool,
+    ) -> Option<Entry<'_, K, V, R>> {
+        if let Some((level, (idx, _))) = self
+            .levels
+            .iter()
+            .enumerate()
+            .flat_map(|(i, level)| level.items.iter().enumerate().map(move |x| (i, x)))
+            .filter(|(_, (_, (key, val)))| pred(key, val))
+            .next()
+        {
+            Some(Entry {
+                cache: self,
+                level,
+                idx,
+            })
+        } else {
+            None
+        }
+    }
 }
 
 /// A reference to an occupied entry in the cache.
@@ -347,16 +400,26 @@ impl<'a, K: Eq + Hash, V, R: Rng> Entry<'a, K, V, R> {
         self.peek_key_value_mut().1
     }
 
+    /// Read the item at this entry and destroy the `Entry` struct. The item will still be in the
+    /// cache but this allows us to get a reference with the full lifetime of this entry.
+    pub fn peek_long(self) -> (&'a K, &'a mut V) {
+        let (key, value) = self.cache.levels[self.level]
+            .items
+            .get_index_mut(self.idx)
+            .unwrap();
+        (&*key, value)
+    }
+
     /// Get the key and value at this entry and promote this entry to a higher level in the cache.
     ///
     /// This function will promote this entry to a higher level in the cache and based on some
     /// probability move other items down in the cache.
     pub fn get_key_value(&mut self) -> (&K, &mut V) {
-        let (key, value) = self.remove_raw();
-        replace_with::replace_with_or_abort(self, |self_| {
-            self_
-                .cache
-                .insert_at_level::<false>(key, value, self_.level.saturating_sub(1))
+        replace_with_or_abort(self, |self_| {
+            let curr_level = self_.level;
+            let (index, cache) = self_.index_and_cache();
+            let (key, value) = index.remove_from(cache);
+            cache.insert_at_level::<false>(key, value, curr_level.saturating_sub(1))
         });
         self.peek_key_value_mut()
     }
@@ -369,22 +432,185 @@ impl<'a, K: Eq + Hash, V, R: Rng> Entry<'a, K, V, R> {
         self.get_key_value().1
     }
 
+    /// Get the key and value at this entry and promote this entry to a higher level in the cache.
+    ///
+    ///
+    /// Unlike `Self::get_key_value`, this method consumes the `Entry` allowing for a longer
+    /// lifetime of the returned reference. Note that the item will still remain in the cache
+    /// though.
+    ///
+    /// This function will promote this entry to a higher level in the cache and based on some
+    /// probability move other items down in the cache.
+    pub fn get_long(mut self) -> (&'a K, &'a mut V) {
+        self.get_key_value();
+        self.peek_long()
+    }
+
     /// Remove this entry from the cache. Leaving the rest of the cache intact.
     ///
     /// Runs in O(1) time.
-    pub fn remove(mut self) -> (K, V) {
-        self.remove_raw()
+    pub fn remove(self) -> (K, V) {
+        let (index, cache) = self.index_and_cache();
+        index.remove_from(cache)
     }
 
-    /// Remove this entry from the cache but doesn't consume the struct. This is just an
-    /// implementation detail and is hence private. The thing is that `self.level` and `self.idx`
-    /// will be invalidated after a call to this function.
-    fn remove_raw(&mut self) -> (K, V) {
-        let level_items = &mut self.cache.levels[self.level].items;
+    /// Get an index for this entry.
+    ///
+    /// This is like the `Entry` without the reference to the cache. The `Index` will be
+    /// invalidated though if the cache is altered in any way, including insertian of new elements
+    /// or promotion of existing elements.
+    pub fn index(self) -> Index<K, V, R> {
+        self.index_and_cache().0
+    }
+
+    /// Split this entry to an index and the cache.
+    ///
+    /// The `Index` is like the `Entry` without the reference to the cache. The `Index` will be
+    /// invalidated though if the cache is altered in any way, including insertian of new elements
+    /// or promotion of existing elements.
+    pub fn index_and_cache(self) -> (Index<K, V, R>, &'a mut CommonCache<K, V, R>) {
+        (
+            Index {
+                level: self.level,
+                idx: self.idx,
+                generation: self.cache.generation,
+                _key_ty: PhantomData,
+                _val_ty: PhantomData,
+                _rng_ty: PhantomData,
+            },
+            self.cache,
+        )
+    }
+}
+
+/// An index into a `CommonCache`.
+///
+/// This should be used when an `Entry` is not sufficient due to life time problems. Note however
+/// that all indexes to a cache will be invalidated whenever the cache is altered in any way.
+/// Including insertian of new elements and promotion of existing elements. This is because the
+/// index is just a pointer to a specific level and index in that level of the cache. If some
+/// element is inserted or promoted, a few other elements will **randomly** be moved down some
+/// levels in the cache, causing their indexes to be invalid and potentially point to other items.
+/// However, this happens randomly, so tests might not recognize such a bug, and it will not be
+/// reproduceable.
+///
+/// The solution is to use an internal counter, (generation), which increments each time the cache
+/// is altered. Each index has the generation of the cache when the index was created, and if the
+/// index is used with a newer version of the cache it will be invalid.
+#[derive(Debug, PartialEq, Eq, Hash, Clone)]
+pub struct Index<K, V, R: Rng> {
+    /// The index of the level for the item.
+    level: usize,
+    /// The index for the item whithin the level.
+    idx: usize,
+    /// The generation when this index was created.
+    generation: u64,
+    _key_ty: PhantomData<K>,
+    _val_ty: PhantomData<V>,
+    _rng_ty: PhantomData<R>,
+}
+
+impl<K: Eq + Hash, V, R: Rng> Index<K, V, R> {
+    /// Assert that this index has the same generation as that of a cache. Panics otherwise.
+    fn assert_generation(&self, cache: &CommonCache<K, V, R>) {
+        assert_eq!(
+            self.generation, cache.generation,
+            "The generations of an `Index` and a `CommonCache` differs"
+        );
+    }
+
+    /// Get an entry corresponding to this index.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the generation of the cache and this index differs, I.E that something has been
+    /// inserted or promoted in the cache since this index was created.
+    ///
+    /// Might also panic when trying to read the entry if the item corresponding to this index has
+    /// been removed.
+    pub fn entry(self, cache: &mut CommonCache<K, V, R>) -> Entry<'_, K, V, R> {
+        self.assert_generation(cache);
+        Entry {
+            cache,
+            level: self.level,
+            idx: self.idx,
+        }
+    }
+
+    /// Read the key and value at the index without touching the rest of the cache. This operation
+    /// will hence not be taken into account when considering which elements are most commonly
+    /// used.
+    pub fn peek_key_value<'a>(&'a self, cache: &'a CommonCache<K, V, R>) -> (&'a K, &'a V) {
+        self.assert_generation(cache);
+        cache.levels[self.level].items.get_index(self.idx).unwrap()
+    }
+
+    /// Silently read the key at this index.
+    pub fn peek_key<'a>(&'a self, cache: &'a CommonCache<K, V, R>) -> &'a K {
+        self.peek_key_value(cache).0
+    }
+
+    /// Read the value at the index without touching the rest of the cache. This operation
+    /// will hence not be taken into account when considering which elements are most commonly
+    /// used.
+    pub fn peek_value<'a>(&'a self, cache: &'a CommonCache<K, V, R>) -> &'a V {
+        self.peek_key_value(cache).1
+    }
+
+    /// Read the item at this index mutably without touching the rest of the cache. This operation will not
+    /// be taken into account when considering which elements are most commonly used.
+    ///
+    /// Note that this does not count as altering the cache so the index is still valid after this.
+    pub fn peek_key_value_mut<'a>(
+        &'a self,
+        cache: &'a mut CommonCache<K, V, R>,
+    ) -> (&'a K, &'a mut V) {
+        self.assert_generation(cache);
+        let (key, value) = cache.levels[self.level]
+            .items
+            .get_index_mut(self.idx)
+            .unwrap();
+        (&*key, value)
+    }
+
+    /// Read the value at this index mutably without touching the rest of the cache. This operation will not
+    /// be taken into account when considering which elements are most commonly used.
+    ///
+    /// Note that this does not count as altering the cache so the index is still valid after this.
+    pub fn peek_value_mut<'a>(&'a self, cache: &'a mut CommonCache<K, V, R>) -> &'a mut V {
+        self.peek_key_value_mut(cache).1
+    }
+
+    /// Get the key and value at this index and promote the item to a higher level in the cache.
+    ///
+    /// This function will promote the item to a higher level in the cache and based on some
+    /// probability move other items down in the cache.
+    ///
+    /// **The index will be invalidated after this operation.**
+    pub fn get_key_value(self, cache: &mut CommonCache<K, V, R>) -> (&K, &mut V) {
+        let curr_level = self.level;
+        let (key, value) = self.remove_from(cache);
+        cache
+            .insert_at_level::<false>(key, value, curr_level.saturating_sub(1))
+            .peek_long()
+    }
+
+    /// Get the value at this index and promote this index to a higher level in the cache.
+    ///
+    /// This function will promote this index to a higher level in the cache and based on some
+    /// probability move other items down in the cache.
+    pub fn get_value(self, cache: &mut CommonCache<K, V, R>) -> &mut V {
+        self.get_key_value(cache).1
+    }
+
+    /// Remove the item at this index from the cache.
+    fn remove_from(self, cache: &mut CommonCache<K, V, R>) -> (K, V) {
+        self.assert_generation(cache);
+        let level_items = &mut cache.levels[self.level].items;
         let (key, value) = level_items.swap_remove_index(self.idx).unwrap();
-        if level_items.is_empty() && self.level == self.cache.levels.len() - 1 {
+        if level_items.is_empty() && self.level == cache.levels.len() - 1 {
             // If the last level became empty, we shall remove it.
-            self.cache.levels.pop();
+            cache.levels.pop();
         }
         (key, value)
     }
