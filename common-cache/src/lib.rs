@@ -213,7 +213,7 @@ where
     /// use common_cache::CommonCache;
     /// use assert_matches::assert_matches;
     ///
-    /// let mut cache = CommonCache::new(2);
+    /// let mut cache = CommonCache::new(2, None);
     /// let mut entry = cache.insert(4, "Hello");
     /// assert_matches!(*entry.get_value(), "Hello");
     /// ```

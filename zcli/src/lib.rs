@@ -202,7 +202,7 @@ impl Client {
         regex_search: bool,
         global: bool,
     ) -> Result<impl Iterator<Item = (String, Vec<ReceivedMessage>)>> {
-        let narrows = req.narrow.get_or_insert(Default::default());
+        let narrows = req.range.narrow.get_or_insert(Default::default());
         if regex_search {
             let mut found_stream = None;
             for Narrow {
