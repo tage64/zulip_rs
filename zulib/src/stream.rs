@@ -1,10 +1,11 @@
 //! Types for requests and responses about streams.
 use chrono::prelude::*;
 use serde::{Deserialize, Serialize};
-use serde_repr::Deserialize_repr;
+use serde_repr::{Deserialize_repr, Serialize_repr};
+use std::ops::Deref;
 
 /// Get a list of streams.
-#[derive(Serialize, clap::Parser, Debug, Clone)]
+#[derive(Serialize, Deserialize, clap::Parser, Debug, Clone)]
 pub struct GetStreamsRequest {
     /// Toggle inclusion of all public streams.
     #[clap(short = 'p', long="no-include-public", action = clap::ArgAction::SetFalse)]
@@ -41,7 +42,7 @@ impl Default for GetStreamsRequest {
 }
 
 /// A wrapper around the response from the get_streams request.
-#[derive(Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug)]
 pub(crate) struct GetStreamsResponse {
     pub streams: Vec<Stream>,
 }
@@ -55,7 +56,7 @@ pub(crate) struct GetStreamResponse {
 /// Information about a stream.
 ///
 /// Can be fetched with `crate::Client::get_streams`.
-#[derive(Deserialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct Stream {
     /// The id of the stream.
     pub stream_id: u64,
@@ -95,12 +96,6 @@ pub struct Stream {
     /// widget that would suggest the stream has older history that can be accessed.
     /// `None` is used for streams with no message history.
     pub first_message_id: Option<u64>,
-    /// The average number of messages sent to the stream in recent weeks, rounded to the nearest
-    /// integer.
-    ///
-    /// `None` means the stream was recently created and there is insufficient data to estimate the
-    /// average traffic.
-    pub stream_weekly_trafic: Option<u64>,
     /// ID of the user group whose members are allowed to unsubscribe others from the stream.
     ///
     /// New in Zulip 6.0 (feature level 142), will be `None` if not present.
@@ -110,7 +105,7 @@ pub struct Stream {
 /// Information about a stream the user is subscribed to.
 ///
 /// Can be requested with `crate::Client::get_subscribed_streams`.
-#[derive(Deserialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct Subscription {
     /// Information about the stream, not specific to the user.
     #[serde(flatten)]
@@ -153,6 +148,19 @@ pub struct Subscription {
     pub is_web_public: bool,
     /// The user's personal color for the stream.
     pub color: String,
+    /// The average number of messages sent to the stream in recent weeks, rounded to the nearest
+    /// integer.
+    ///
+    /// `None` means the stream was recently created and there is insufficient data to estimate the
+    /// average traffic.
+    pub stream_weekly_trafic: Option<u64>,
+}
+
+impl Deref for Subscription {
+    type Target = Stream;
+    fn deref(&self) -> &Self::Target {
+        &self.stream
+    }
 }
 
 #[derive(Deserialize, Debug)]
@@ -161,7 +169,7 @@ pub(crate) struct GetSubscribedStreamsResponse {
 }
 
 /// Policy levels for posting messages to a stream.
-#[derive(Deserialize_repr, Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Serialize_repr, Deserialize_repr, Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u8)]
 pub enum StreamPostPolicy {
     /// Any user can post.
@@ -174,7 +182,7 @@ pub enum StreamPostPolicy {
     OnlyModerators = 4,
 }
 
-#[derive(Deserialize, Debug, Clone, PartialEq, PartialOrd, Eq, Ord)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, PartialOrd, Eq, Ord)]
 pub struct Topic {
     /// The message ID of the last message sent to this topic.
     pub max_id: u64,

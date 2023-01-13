@@ -46,19 +46,30 @@ use core::marker::PhantomData;
 use indexmap::IndexMap;
 use rand::prelude::*;
 use replace_with::replace_with_or_abort;
+#[cfg(feature = "serde")]
+use serde::{Deserialize, Serialize};
 
 /// A collection which keeps and promotes the most recently and commonly used items.
 ///
 /// See the module level documentation for details.
 #[derive(Debug, Clone)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct CommonCache<K, V, R: Rng = StdRng> {
     /// The base for the exponentially growing size of levels.
     base: usize,
     /// All active levels in the cache
     ///
     /// These will at most have size [1, base, base^2, base^3, ...] and the last will not be empty.
+    #[cfg_attr(
+        feature = "serde",
+        serde(bound(
+            deserialize = "K: Deserialize<'de> + Eq + Hash, V: Deserialize<'de>",
+            serialize = "K: Serialize + Eq + Hash, V: Serialize",
+        ))
+    )]
     levels: Vec<Level<K, V>>,
     /// A random number generator.
+    #[serde(skip, default = "SeedableRng::from_entropy", bound = "R: SeedableRng")]
     rng: R,
 
     /// An upper bound of the number of elements in the cache. Might be set to `usize::MAX`.
@@ -74,6 +85,14 @@ pub struct CommonCache<K, V, R: Rng = StdRng> {
 
 /// A level in the cache.
 #[derive(Debug, Clone)]
+#[cfg_attr(
+    feature = "serde",
+    derive(Serialize, Deserialize),
+    serde(bound(
+        deserialize = "K: Deserialize<'de> + Eq + Hash, V: Deserialize<'de>",
+        serialize = "K: Serialize + Eq + Hash, V: Serialize",
+    ))
+)]
 struct Level<K, V> {
     items: IndexMap<K, V>,
     /// An instance of a uniform distribution to generate random numbers in the range [0..base^n],
@@ -131,6 +150,12 @@ impl<K, V> CommonCache<K, V> {
 
         // Some random elements might have been removed so let's increase the generation to
         // invalidate any indexes to the cache.
+        self.generation += 1;
+    }
+
+    /// Clear the cache.
+    pub fn clear(&mut self) {
+        self.levels.clear();
         self.generation += 1;
     }
 }
@@ -310,7 +335,7 @@ where
     ///
     /// This does not alter the cache in any way. So no items are promoted to higher levels in the
     /// cache when iterated over.
-    pub fn iter(&self) -> impl Iterator<Item = (&'_ K, &'_ V)> + '_ {
+    pub fn iter(&self) -> impl DoubleEndedIterator<Item = (&'_ K, &'_ V)> + '_ {
         self.levels.iter().flat_map(|x| x.items.iter())
     }
 
@@ -352,7 +377,7 @@ where
 
 /// A reference to an occupied entry in the cache.
 #[derive(Debug)]
-pub struct Entry<'a, K, V, R: Rng> {
+pub struct Entry<'a, K, V, R: Rng = StdRng> {
     /// A reference to the entire cache.
     cache: &'a mut CommonCache<K, V, R>,
     /// The index of the level for the entry.
@@ -498,7 +523,7 @@ impl<'a, K: Eq + Hash, V, R: Rng> Entry<'a, K, V, R> {
 /// is altered. Each index has the generation of the cache when the index was created, and if the
 /// index is used with a newer version of the cache it will be invalid.
 #[derive(Debug, PartialEq, Eq, Hash, Clone)]
-pub struct Index<K, V, R: Rng> {
+pub struct Index<K, V, R: Rng = StdRng> {
     /// The index of the level for the item.
     level: usize,
     /// The index for the item whithin the level.

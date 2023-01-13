@@ -11,10 +11,10 @@ pub type CommandResult = anyhow::Result<ControlFlow<(), ()>>;
 ///
 /// # Arguments
 ///
-/// Takes a prompt string, a run function for something implementing `clap::Subcommand`, and a mutable reference to some data that will be
+/// Takes a function generating a prompt, a run function for something implementing `clap::Subcommand`, and a mutable reference to some data that will be
 /// passed to the run-function of the command.
 pub async fn run_repl<Cmds, T>(
-    prompt: &str,
+    mut prompt: impl FnMut(&mut T) -> String,
     mut run_func: impl for<'a> FnMut(
         Cmds,
         &'a mut T,
@@ -40,7 +40,7 @@ where
     // Initiate the Read Eval Print LOOP!
     let mut rl = rustyline::Editor::<()>::new()?;
     loop {
-        match rl.readline(prompt) {
+        match rl.readline(&prompt(data)) {
             Ok(line) => {
                 let line = line.trim();
                 if line.is_empty() {

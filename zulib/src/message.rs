@@ -4,14 +4,14 @@ use serde::{Deserialize, Deserializer, Serialize, Serializer};
 mod narrow;
 pub use narrow::Narrow;
 
-#[derive(Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug)]
 pub struct SendMessageResponse {
     pub id: u64,
     pub msg: String,
 }
 
 /// Send a message.
-#[derive(Serialize, Debug, clap::Parser)]
+#[derive(Serialize, Deserialize, Debug, clap::Parser)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum SendMessageRequest {
     /// Make a message to a stream.
@@ -139,7 +139,7 @@ impl Serialize for Anchor {
 }
 
 /// The response of a get_messages request.
-#[derive(Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug)]
 pub struct GetMessagesResponse {
     /// The same anchor specified in the request (or the computed one, if
     /// `GetMessagesRequest::anchor` was set to `Anchor::FirstUnread`).
@@ -162,7 +162,7 @@ pub struct GetMessagesResponse {
     pub messages: Vec<ReceivedMessage>,
 }
 
-#[derive(Deserialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct ReceivedMessage {
     /// The unique message ID. Messages should always be displayed sorted by ID.
     pub id: u64,
@@ -224,7 +224,7 @@ pub struct ReceivedMessage {
     pub match_subject: Option<String>,
 }
 
-#[derive(Deserialize, Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum MessageType {
     Private,
@@ -232,7 +232,7 @@ pub enum MessageType {
 }
 
 /// Data of the recipient of a message.
-#[derive(Deserialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 #[serde(untagged)]
 pub enum DisplayRecipient {
     /// The name of the stream the message was sent to.
@@ -241,7 +241,7 @@ pub enum DisplayRecipient {
     BasicRicipientData(serde_json::Map<String, serde_json::Value>),
 }
 
-#[derive(Deserialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct DisplayRecipientPrivateMessage {
     pub id: i64,
     pub email: String,
@@ -250,7 +250,7 @@ pub struct DisplayRecipientPrivateMessage {
 }
 
 /// A historical edit of a message.
-#[derive(Deserialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct EditHistory {
     /// The time for the edit.
     #[serde(with = "chrono::serde::ts_seconds")]
@@ -295,7 +295,7 @@ pub struct EditHistory {
 }
 
 /// A reaction to a message.
-#[derive(Deserialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct Reaction {
     pub emoji_code: String,
     pub emoji_name: String,
@@ -303,7 +303,7 @@ pub struct Reaction {
     pub user_id: u64,
 }
 
-#[derive(Serialize, Debug)]
+#[derive(Serialize, Deserialize, Debug)]
 pub struct EditMessageRequest {
     #[serde(skip_serializing)]
     pub(crate) message_id: i64,
@@ -353,7 +353,7 @@ impl EditMessageRequest {
     }
 }
 
-#[derive(Serialize, Debug)]
+#[derive(Serialize, Deserialize, Debug)]
 pub struct AddEmojiReactionRequest {
     #[serde(skip_serializing)]
     pub(crate) message_id: i64,
@@ -381,7 +381,7 @@ impl AddEmojiReactionRequest {
     }
 }
 
-#[derive(Serialize, Debug)]
+#[derive(Serialize, Deserialize, Debug)]
 pub struct RemoveEmojiReactionRequest {
     pub(crate) message_id: i64,
     emoji_name: Option<String>,
@@ -412,7 +412,7 @@ impl RemoveEmojiReactionRequest {
     }
 }
 
-#[derive(Serialize, Debug)]
+#[derive(Serialize, Deserialize, Debug)]
 #[serde(rename_all = "snake_case")]
 pub enum ReactionType {
     UnicodeEmoji,
@@ -420,7 +420,7 @@ pub enum ReactionType {
     ZulipExtraEmoji,
 }
 
-#[derive(Serialize, Debug)]
+#[derive(Serialize, Deserialize, Debug)]
 #[serde(rename_all = "snake_case")]
 pub enum PropagateMode {
     ChangeOne,

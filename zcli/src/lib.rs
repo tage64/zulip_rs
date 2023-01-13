@@ -1,7 +1,10 @@
 use anyhow::{bail, Context, Result};
 use common_cache::CommonCache;
 use derive_more::Deref;
+use iter_tools::Itertools as _;
 use regex::{Regex, RegexBuilder};
+use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use zulib::{message::*, stream::*};
 
 #[derive(Debug, Deref)]
@@ -10,15 +13,20 @@ pub struct Client {
     backend: zulib::Client,
 
     /// The currently selected stream, if any.
-    selected_stream: Option<u64>,
+    selected_stream: Option<Stream>,
     /// The currently selected topic if any. If `selected_stream` is `None` then must also
     /// `selected_topic` be `None`.
     selected_topic: Option<String>,
+    cache: Cache,
+}
 
+/// Some useful caches.
+#[derive(Debug, Deserialize, Serialize, Clone)]
+struct Cache {
     /// A cache with recently used streams. Stream ids as keys and stream objects as values.
-    stream_cache: CommonCache<u64, Stream>,
+    streams: CommonCache<u64, Stream>,
     /// A cache with recently read topics. Topic names as keys and stream id as value.
-    topic_cache: CommonCache<String, u64>,
+    topics: CommonCache<String, u64>,
 }
 
 impl Client {
@@ -27,9 +35,67 @@ impl Client {
             backend: zulib::Client::new(rc)?,
             selected_stream: None,
             selected_topic: None,
-            stream_cache: CommonCache::new(2, Some(128)),
-            topic_cache: CommonCache::new(2, Some(512)),
+            cache: Cache {
+                streams: CommonCache::new(2, Some(128)),
+                topics: CommonCache::new(2, Some(512)),
+            },
         })
+    }
+
+    /// Create a new client from a cache file.
+    pub fn from_cache(cache_file_content: &str, rc: zulib::ZulipRc) -> Result<Self> {
+        Ok(Self {
+            cache: serde_json::from_str(cache_file_content)
+                .context("Failed to parse cache file.")?,
+            ..Self::new(rc)?
+        })
+    }
+
+    /// Get the content of the cache file a(as it would be right now) as a string.
+    pub fn mk_cache_file(&self) -> String {
+        serde_json::to_string_pretty(&self.cache).unwrap()
+    }
+
+    /// Iterate over all streams in the cache, from most to least commonly/recently used.
+    pub fn stream_cache_iter(&self) -> impl DoubleEndedIterator<Item = &Stream> {
+        self.cache.streams.iter().map(|(_, x)| x)
+    }
+
+    /// Iterate over all topics in the cache, from most to least commonly/recently used.
+    pub fn topic_cache_iter(&self) -> impl DoubleEndedIterator<Item = &str> {
+        self.cache.topics.iter().map(|(x, _)| x.as_str())
+    }
+
+    /// Clear the stream and topic cache.
+    pub fn clear_cache(&mut self) {
+        self.cache.streams.clear();
+        self.cache.topics.clear();
+    }
+
+    /// Get an iterator of all streams (filtered by a `GetStreamsRequest`) in  order, with
+    /// unsubscribed streams first, and then subscribed streams sorted by weekly trafic from lowest
+    /// to highest. Nothing will be added to the cache.
+    pub async fn get_streams(
+        &self,
+        req: &GetStreamsRequest,
+    ) -> Result<impl Iterator<Item = Stream>> {
+        let subscribed_streams: HashMap<u64, _> = self
+            .get_subscribed_streams()
+            .await?
+            .into_iter()
+            .map(|x| (x.stream_id, x))
+            .collect();
+        let (mut relevant_subscribed_streams, unsubscribed_streams) = self
+            .backend
+            .get_streams(req)
+            .await?
+            .into_iter()
+            .partition::<Vec<_>, _>(|x| subscribed_streams.contains_key(&x.stream_id));
+        relevant_subscribed_streams
+            .sort_unstable_by_key(|x| subscribed_streams[&x.stream_id].stream_weekly_trafic);
+        Ok(unsubscribed_streams
+            .into_iter()
+            .chain(relevant_subscribed_streams.into_iter()))
     }
 
     /// Get an iterator of streams matching a regex, in order with most
@@ -38,30 +104,37 @@ impl Client {
         &'a self,
         re: &'a Regex,
     ) -> impl Iterator<Item = &'a Stream> + 'a {
-        self.stream_cache
+        self.cache
+            .streams
             .iter()
             .map(|(_id, stream)| stream)
             .filter(|stream| re.is_match(&stream.name))
     }
 
     /// Search for a stream by a regex. First considers the local cache and if that fails fetches
-    /// all streams from the server. The found stream will be added to (or promoted in) the cache.
-    async fn stream_search(&mut self, re: &Regex) -> Result<Option<&'_ Stream>> {
+    /// subscribed streams from the server (ordered by weekly trafic). The found stream will be
+    /// added to (or promoted in) the cache.
+    async fn stream_search(
+        &mut self,
+        re: &Regex,
+    ) -> Result<Option<common_cache::Entry<'_, u64, Stream>>> {
         if let Some(cache_idx) = self
-            .stream_cache
+            .cache
+            .streams
             .find_first(|_, stream| re.is_match(&stream.name))
             .map(|x| x.index())
         {
-            Ok(Some(cache_idx.get_value(&mut self.stream_cache)))
+            Ok(Some(cache_idx.entry(&mut self.cache.streams)))
         } else {
-            let streams = self.backend.get_streams(&Default::default()).await?;
-            if let Some(stream) = streams.into_iter().filter(|x| re.is_match(&x.name)).next() {
-                Ok(Some(
-                    self.stream_cache
-                        .insert(stream.stream_id, stream)
-                        .peek_long()
-                        .1,
-                ))
+            let mut streams = self.backend.get_subscribed_streams().await?;
+            streams.sort_unstable_by_key(|x| x.stream_weekly_trafic);
+            if let Some(stream) = streams
+                .into_iter()
+                .map(|x| x.stream)
+                .filter(|x| re.is_match(&x.name))
+                .next()
+            {
+                Ok(Some(self.cache.streams.insert(stream.stream_id, stream)))
             } else {
                 Ok(None)
             }
@@ -76,16 +149,21 @@ impl Client {
     /// Returns the name of the topic.
     async fn topic_search(&mut self, stream_id: u64, re: &Regex) -> Result<Option<&'_ String>> {
         if let Some(cache_idx) = self
-            .topic_cache
+            .cache
+            .topics
             .find_first(|topic, &stream| stream == stream_id && re.is_match(topic))
             .map(|x| x.index())
         {
-            Ok(Some(cache_idx.get_key_value(&mut self.topic_cache).0))
+            Ok(Some(cache_idx.get_key_value(&mut self.cache.topics).0))
         } else {
             let topics = self.backend.get_topics_in_stream(stream_id).await?;
             if let Some(topic) = topics.into_iter().filter(|x| re.is_match(&x.name)).next() {
                 Ok(Some(
-                    self.topic_cache.insert(topic.name, stream_id).peek_long().0,
+                    self.cache
+                        .topics
+                        .insert(topic.name, stream_id)
+                        .peek_long()
+                        .0,
                 ))
             } else {
                 Ok(None)
@@ -96,12 +174,13 @@ impl Client {
     /// Get a stream by id. Either from the local cache or fetched from the server. It'll be
     /// promoted in the local cache, so don't use this for a large number of automated calls if you
     /// don't want the user to think that this stream is used alot.
-    async fn get_stream(&mut self, id: u64) -> Result<&Stream> {
-        if let Some(cache_idx) = self.stream_cache.entry(&id).map(|x| x.index()) {
-            Ok(cache_idx.get_value(&mut self.stream_cache))
+    pub async fn get_stream(&mut self, id: u64) -> Result<&Stream> {
+        if let Some(cache_idx) = self.cache.streams.entry(&id).map(|x| x.index()) {
+            Ok(cache_idx.get_value(&mut self.cache.streams))
         } else {
             Ok(self
-                .stream_cache
+                .cache
+                .streams
                 .insert(id, self.backend.get_stream_by_id(id).await?)
                 .peek_long()
                 .1)
@@ -122,69 +201,118 @@ impl Client {
         mut req: GetMessagesRequest,
         regex_search: bool,
         global: bool,
-    ) -> Result<GetMessagesResponse> {
+    ) -> Result<impl Iterator<Item = (String, Vec<ReceivedMessage>)>> {
+        let narrows = req.narrow.get_or_insert(Default::default());
         if regex_search {
-            if let Some(narrows) = req.narrow.as_mut() {
-                let mut found_stream = None;
+            let mut found_stream = None;
+            for Narrow {
+                operator, operand, ..
+            } in narrows.iter_mut()
+            {
+                if operator == "stream" {
+                    if let Some(mut stream_cache_entry) =
+                        self.stream_search(&mk_regex(operand)?).await?
+                    {
+                        let stream = stream_cache_entry.get_value();
+                        *operand = stream.name.clone();
+                        found_stream = Some(stream.stream_id);
+                    } else {
+                        bail!("No stream found matching: {operand}");
+                    }
+                }
+            }
+
+            // Search for "topic" in the narrows.
+            if let Some(stream) = found_stream.or(self.selected_stream_id()) {
                 for Narrow {
                     operator, operand, ..
                 } in narrows.iter_mut()
                 {
-                    if operator == "stream" {
-                        if let Some(stream) = self.stream_search(&mk_regex(operand)?).await? {
-                            *operand = stream.name.clone();
-                            found_stream = Some(stream.stream_id);
+                    if operator == "topic" {
+                        if let Some(topic) = self.topic_search(stream, &mk_regex(operand)?).await? {
+                            *operand = topic.clone();
                         } else {
-                            bail!("No stream found matching: {operand}");
-                        }
-                    }
-                }
-
-                // Search for "topic" in the narrows.
-                let mut found_topic = false;
-                if let Some(stream) = found_stream.or(self.selected_stream) {
-                    for Narrow {
-                        operator, operand, ..
-                    } in narrows.iter_mut()
-                    {
-                        if operator == "topic" {
-                            if let Some(topic) =
-                                self.topic_search(stream, &mk_regex(operand)?).await?
-                            {
-                                *operand = topic.clone();
-                                found_topic = true;
-                            } else {
-                                bail!("No topic found matching: {operand}");
-                            }
-                        }
-                    }
-                }
-
-                // If no stream/topic was narrowed and `global` is `false` and a topic or stream is
-                // selected, add it to the list of narrows.
-                if !global {
-                    if found_stream.is_none() {
-                        if let Some(selected_stream_id) = self.selected_stream {
-                            narrows.push(Narrow {
-                                operator: "stream".to_string(),
-                                operand: self.get_stream(selected_stream_id).await?.name.clone(),
-                                negated: false,
-                            });
-                        }
-                    }
-                    if !found_topic {
-                        if let Some(selected_topic) = &self.selected_topic {
-                            narrows.push(Narrow {
-                                operator: "topic".to_string(),
-                                operand: selected_topic.clone(),
-                                negated: false,
-                            });
+                            bail!("No topic found matching: {operand}");
                         }
                     }
                 }
             }
         }
-        Ok(self.backend.get_messages(req).await?)
+
+        // If no stream/topic was narrowed and `global` is `false` and a topic or stream is
+        // selected, add it to the list of narrows.
+        if !global {
+            if !narrows.iter().any(|x| x.operator == "stream") {
+                if let Some(selected_stream) = self.selected_stream.as_ref() {
+                    narrows.push(Narrow {
+                        operator: "stream".to_string(),
+                        operand: selected_stream.name.clone(),
+                        negated: false,
+                    });
+                }
+            }
+            if !narrows.iter().any(|x| x.operator == "topic") {
+                if let Some(selected_topic) = &self.selected_topic {
+                    narrows.push(Narrow {
+                        operator: "topic".to_string(),
+                        operand: selected_topic.clone(),
+                        negated: false,
+                    });
+                }
+            }
+        }
+
+        let messages = self.backend.get_messages(req).await?.messages;
+        let grouped_messages = messages
+            .into_iter()
+            .into_grouping_map_by(|x| x.subject.clone())
+            .collect::<Vec<_>>()
+            .drain()
+            .map(|(k, mut v)| {
+                v.sort_unstable_by_key(|x| x.id);
+                (k, v)
+            })
+            .sorted_unstable_by_key(|(_, msgs)| msgs[0].id);
+        for (topic, messages) in grouped_messages.as_slice().iter() {
+            let stream_id = messages[0].stream_id.unwrap();
+            self.cache.topics.insert(topic.to_string(), stream_id);
+        }
+        Ok(grouped_messages)
+    }
+
+    /// Select a stream by either a name or a regex for the name.
+    ///
+    /// If a regex is provided, the
+    /// stream will first be searched for in the cache and then all streams will be fetched from
+    /// the server. If a plain name is given, it will be checked that the stream indeed exists.
+    ///
+    /// Returns a reference to the newly selected stream.
+    pub async fn select_stream(&mut self, name: &str, is_regex: bool) -> Result<&Stream> {
+        if is_regex {
+            let re = mk_regex(name)?;
+            let stream = self
+                .stream_search(&re)
+                .await?
+                .with_context(|| format!("No stream matching: {name}"))?
+                .index();
+            self.selected_stream = Some(stream.peek_value(&self.cache.streams).clone());
+            Ok(stream.get_value(&mut self.cache.streams))
+        } else {
+            let id = self.backend.get_stream_id(name).await?;
+            let stream = self.backend.get_stream_by_id(id).await?;
+            self.selected_stream = Some(stream.clone());
+            Ok(self.cache.streams.insert(id, stream).peek_long().1)
+        }
+    }
+
+    /// Get a reference to the currently selected stream.
+    pub fn selected_stream(&self) -> Option<&Stream> {
+        self.selected_stream.as_ref()
+    }
+
+    /// Get the id of the currently selected stream if any.
+    pub fn selected_stream_id(&self) -> Option<u64> {
+        self.selected_stream.as_ref().map(|x| x.stream_id)
     }
 }
 

@@ -5,11 +5,12 @@ pub mod stream;
 
 pub use client::{Client, Error, Result};
 pub use rc::ZulipRc;
+use serde::{Deserialize, Serialize};
 use std::str::FromStr;
 
 /// An identifier for E.G a stream or a message which both can be referenced by an integer or a
 /// name.
-#[derive(serde::Serialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 #[serde(untagged)]
 pub enum Identifier {
     Id(u64),

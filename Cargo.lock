@@ -419,6 +419,7 @@ dependencies = [
  "indexmap",
  "rand",
  "replace_with",
+ "serde",
 ]
 
 [[package]]
@@ -1090,6 +1091,7 @@ checksum = "1885e79c1fc4b10f0e172c475f458b7f7b93061064d98c3293e98c5ba0c8b399"
 dependencies = [
  "autocfg",
  "hashbrown",
+ "serde",
 ]
 
 [[package]]
@@ -1719,6 +1721,7 @@ dependencies = [
  "libc",
  "rand_chacha",
  "rand_core",
+ "serde",
 ]
 
 [[package]]
@@ -1738,6 +1741,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ec0be4795e2f6a28069bec0b5ff3e2ac9bafc99e6a9a7dc3547996c5c816922c"
 dependencies = [
  "getrandom",
+ "serde",
 ]
 
 [[package]]
@@ -2664,6 +2668,8 @@ dependencies = [
  "flexi_logger",
  "iter_tools",
  "regex",
+ "serde",
+ "serde_json",
  "textwrap",
  "tokio",
  "zulib",

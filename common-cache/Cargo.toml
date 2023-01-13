@@ -7,8 +7,12 @@ edition = "2021"
 
 [dependencies]
 indexmap = "1.9.2"
-rand = "0.8.5"
+rand = { version = "0.8.5", features = ["serde"] }
 replace_with = "0.1.7"
+serde = { version = "1.0.147", features = ["derive"], optional = true }
 
 [dev-dependencies]
 assert_matches = "1.5.0"
+
+[features]
+serde = ["dep:serde", "indexmap/serde", "rand/serde1"]
