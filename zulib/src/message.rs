@@ -31,9 +31,26 @@ pub enum SendMessageRequest {
     },
 }
 
-/// Get one or many messages.
+/// Type of anchor when retreiving messages.
+///
+/// `Anchor::Newest`, `Anchor::Oldest` and `Anchor::FirstUnread` are new in Zulip 3.0 (feature
+/// level 1).
+#[derive(Debug, Clone, Copy, clap::ValueEnum)]
+pub enum Anchor {
+    /// The most recent message.
+    Newest,
+    /// The oldest message.
+    Oldest,
+    /// The oldest unread message matching the query, if any; otherwise, the most recent message.
+    FirstUnread,
+    /// Integer message ID to anchor fetching of new messages.
+    #[clap(skip)]
+    MessageId(u64),
+}
+
+/// Specify a range of messages.
 #[derive(Serialize, Debug, Clone, clap::Parser)]
-pub struct GetMessagesRequest {
+pub struct MessageRange {
     /// Anchor the fetching of new messages.
     #[serde(serialize_with = "serialize_as_json_str")]
     #[clap(short = 'c', long, value_enum, default_value_t = Anchor::Newest)]
@@ -68,6 +85,14 @@ pub struct GetMessagesRequest {
     )]
     #[clap(value_parser = |s: &str| anyhow::Ok(Narrow::parse(s)))]
     pub narrow: Option<Vec<Narrow>>,
+}
+
+/// Get one or many messages.
+#[derive(Serialize, Debug, Clone, clap::Parser)]
+pub struct GetMessagesRequest {
+    #[clap(flatten)]
+    #[serde(flatten)]
+    pub range: MessageRange,
     /// Whether the client supports computing gravatars URLs.
     ///
     /// If enabled, avatar_url will be
@@ -86,35 +111,52 @@ pub struct GetMessagesRequest {
     pub apply_markdown: bool,
 }
 
-/// Type of anchor when retreiving messages.
-///
-/// `Anchor::Newest`, `Anchor::Oldest` and `Anchor::FirstUnread` are new in Zulip 3.0 (feature
-/// level 1).
-#[derive(Debug, Clone, Copy, clap::ValueEnum)]
-pub enum Anchor {
-    /// The most recent message.
-    Newest,
-    /// The oldest message.
-    Oldest,
-    /// The oldest unread message matching the query, if any; otherwise, the most recent message.
-    FirstUnread,
-    /// Integer message ID to anchor fetching of new messages.
-    #[clap(skip)]
-    MessageId(u64),
+/// Add or remove personal message flags like read and starred on a range of messages within a
+/// narrow.
+#[derive(Serialize, Debug, Clone, clap::Parser)]
+pub struct UpdateMessageFlagsRequest {
+    #[clap(flatten)]
+    #[serde(flatten)]
+    pub range: MessageRange,
+    /// Whether to add the flag or remove it.
+    #[serde(rename = "op")]
+    #[clap(value_enum)]
+    operation: FlagOperation,
+    /// The flag that should be added/removed.
+    #[clap(value_enum)]
+    flag: EditableFlag,
 }
 
-impl GetMessagesRequest {
+#[derive(Serialize, Debug, Clone, clap::ValueEnum)]
+#[serde(rename_all = "snake_case")]
+pub enum FlagOperation {
+    Add,
+    Remove,
+}
+
+#[derive(Serialize, Debug, Clone, clap::ValueEnum)]
+#[serde(rename_all = "snake_case")]
+pub enum EditableFlag {
+    /// Whether the user has read the message. Messages start out unread (except for messages the
+    /// user themself sent using a non-API client) and can later be marked as read.
+    Read,
+    /// Whether the user has starred this message.
+    Starred,
+    /// Whether the user has collapsed this message.
+    Collapsed,
+}
+
+impl MessageRange {
     pub fn new(num_before: u64, num_after: u64) -> Self {
         Self {
             anchor: Anchor::Newest,
             num_before,
             num_after,
             narrow: None,
-            apply_markdown: true,
-            client_gravatar: true,
             include_anchor: None,
         }
     }
+
     pub fn anchor(&mut self, anchor: Anchor) -> &mut Self {
         self.anchor = anchor;
         self
@@ -122,6 +164,16 @@ impl GetMessagesRequest {
     pub fn narrow(&mut self, narrow: Vec<Narrow>) -> &mut Self {
         self.narrow = Some(narrow);
         self
+    }
+}
+
+impl GetMessagesRequest {
+    pub fn new(range: MessageRange) -> Self {
+        Self {
+            range,
+            apply_markdown: true,
+            client_gravatar: true,
+        }
     }
 }
 

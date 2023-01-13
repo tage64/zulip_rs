@@ -98,6 +98,17 @@ impl Client {
             .await?;
         parse_response(response).await
     }
+
+    /// Add or remove personal message flags like read and starred on a range of messages within a
+    /// narrow.
+    pub async fn update_message_flags(&self, req: &UpdateMessageFlagsRequest) -> Result<()> {
+        let response = self
+            .http_client(Method::GET, "/api/v1/messages/flags/narrow")
+            .query(req)
+            .send()
+            .await?;
+        parse_response(response).await
+    }
     pub async fn delete_message(&self, id: i64) -> Result<()> {
         let response = self
             .http_client(Method::DELETE, &format!("/api/v1/messages/{}", id))
@@ -208,6 +219,7 @@ impl Client {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::Identifier;
     use httpmock::{
         Method::{DELETE, GET, POST},
         MockServer,
@@ -267,7 +279,7 @@ mod tests {
         });
         let client = test_client(server.address());
 
-        let req = GetMessagesRequest::new(0, 0);
+        let req = GetMessagesRequest::new(MessageRange::new(0, 0));
 
         let result = client.get_messages(req).await;
         mock.assert();
