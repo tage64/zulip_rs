@@ -29,6 +29,35 @@ enum Command {
     Ls(Ls),
     #[clap(subcommand)]
     Send(SendMessageRequest),
+    /// Mark all messages, possibly in a specific stream or topic, as read.
+    MarkRead {
+        /// Specify a stream in which to mark as read. Otherwise all of your messages will be read.
+        ///
+        /// The stream should be a stream id or a name, which can optionally be a regex.
+        stream: Option<zulib::Identifier>,
+        /// Specify a topic to mark as read.
+        topic: Option<String>,
+        /// Interpret the "stream" and "topic" names as regular expressions and try to find the
+        /// corresponding stream/topic.
+        ///
+        /// This will first consider the most recently/commonly used estreams/topics, and then
+        /// fetch streams or topics from the server. If not found in the local cache, only topics
+        /// from the searched or else currently selected stream will be considered.
+        #[clap(short, long)]
+        regex: bool,
+    },
+    UpdateFlags {
+        #[clap(flatten)]
+        req: UpdateMessageFlagsForNarrowRequest,
+        /// Interpret the "stream" and "topic" names as regular expressions and try to find the
+        /// corresponding stream/topic.
+        ///
+        /// This will first consider the most recently/commonly used estreams/topics, and then
+        /// fetch streams or topics from the server. If not found in the local cache, only topics
+        /// from the searched or else currently selected stream will be considered.
+        #[clap(short, long)]
+        regex: bool,
+    },
     /// Clear the caches of streams and topics.
     ClearCache,
 }
@@ -46,7 +75,7 @@ enum Ls {
         /// fetch streams or topics from the server. If not found in the local cache, only topics
         /// from the searched or else currently selected stream will be considered.
         #[clap(short, long)]
-        regex_search: bool,
+        regex: bool,
         /// Only print the name of all topics and the timestamp of their last message.
         #[clap(short, long)]
         only_topics: bool,
@@ -81,10 +110,10 @@ impl Ls {
         match self {
             Ls::Messages {
                 req,
-                regex_search,
+                regex,
                 only_topics,
             } => {
-                for (topic, messages) in client.get_messages(req, regex_search, false).await? {
+                for (topic, messages) in client.get_messages(req, regex, false).await? {
                     if only_topics {
                         println!(
                             "{}: {topic}: {}, {} messages",
@@ -175,6 +204,16 @@ impl Command {
                 println!("Sending: {req:?}");
             }
             Command::ClearCache => client.clear_cache(),
+            Command::MarkRead {
+                stream,
+                topic,
+                regex,
+            } => client.mark_read(stream, topic, regex, false).await?,
+            Command::UpdateFlags { req, regex } => {
+                client
+                    .update_message_flags_for_narrow(req, regex, false)
+                    .await?;
+            }
         }
         Ok(())
     }

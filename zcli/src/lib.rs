@@ -187,6 +187,71 @@ impl Client {
         }
     }
 
+    /// Interpret the stream and topic fields of a narrow as regular expressions and replace them
+    /// with their real names.
+    ///
+    /// The topic/stream will be searched for in the local cache.
+    /// If no matching stream/topic is found in the cache, fetches all
+    /// streams / all topics in the stream from the server.
+    async fn unregex_narrow(&mut self, narrows: &mut [Narrow]) -> Result<()> {
+        let mut found_stream = None;
+        for Narrow {
+            operator, operand, ..
+        } in narrows.iter_mut()
+        {
+            if operator == "stream" {
+                if let Some(mut stream_cache_entry) =
+                    self.stream_search(&mk_regex(operand)?).await?
+                {
+                    let stream = stream_cache_entry.get_value();
+                    *operand = stream.name.clone();
+                    found_stream = Some(stream.stream_id);
+                } else {
+                    bail!("No stream found matching: {operand}");
+                }
+            }
+        }
+
+        // Search for "topic" in the narrows.
+        if let Some(stream) = found_stream.or(self.selected_stream_id()) {
+            for Narrow {
+                operator, operand, ..
+            } in narrows.iter_mut()
+            {
+                if operator == "topic" {
+                    if let Some(topic) = self.topic_search(stream, &mk_regex(operand)?).await? {
+                        *operand = topic.clone();
+                    } else {
+                        bail!("No topic found matching: {operand}");
+                    }
+                }
+            }
+        }
+        Ok(())
+    }
+
+    /// Add the current stream/topic to a narrow if no stream/topic is specified in the narrow.
+    fn narrow_to_current(&self, narrows: &mut Vec<Narrow>) {
+        if !narrows.iter().any(|x| x.operator == "stream") {
+            if let Some(selected_stream) = self.selected_stream.as_ref() {
+                narrows.push(Narrow {
+                    operator: "stream".to_string(),
+                    operand: selected_stream.name.clone(),
+                    negated: false,
+                });
+            }
+        }
+        if !narrows.iter().any(|x| x.operator == "topic") {
+            if let Some(selected_topic) = &self.selected_topic {
+                narrows.push(Narrow {
+                    operator: "topic".to_string(),
+                    operand: selected_topic.clone(),
+                    negated: false,
+                });
+            }
+        }
+    }
+
     /// Get a list of all messages matching a query.
     ///
     /// If `regex_search` is `true`, the topic and/or stream narrows will be interpretted as regular
@@ -204,62 +269,13 @@ impl Client {
     ) -> Result<impl Iterator<Item = (String, Vec<ReceivedMessage>)>> {
         let narrows = req.range.narrow.get_or_insert(Default::default());
         if regex_search {
-            let mut found_stream = None;
-            for Narrow {
-                operator, operand, ..
-            } in narrows.iter_mut()
-            {
-                if operator == "stream" {
-                    if let Some(mut stream_cache_entry) =
-                        self.stream_search(&mk_regex(operand)?).await?
-                    {
-                        let stream = stream_cache_entry.get_value();
-                        *operand = stream.name.clone();
-                        found_stream = Some(stream.stream_id);
-                    } else {
-                        bail!("No stream found matching: {operand}");
-                    }
-                }
-            }
-
-            // Search for "topic" in the narrows.
-            if let Some(stream) = found_stream.or(self.selected_stream_id()) {
-                for Narrow {
-                    operator, operand, ..
-                } in narrows.iter_mut()
-                {
-                    if operator == "topic" {
-                        if let Some(topic) = self.topic_search(stream, &mk_regex(operand)?).await? {
-                            *operand = topic.clone();
-                        } else {
-                            bail!("No topic found matching: {operand}");
-                        }
-                    }
-                }
-            }
+            self.unregex_narrow(narrows.as_mut_slice()).await?;
         }
 
         // If no stream/topic was narrowed and `global` is `false` and a topic or stream is
         // selected, add it to the list of narrows.
         if !global {
-            if !narrows.iter().any(|x| x.operator == "stream") {
-                if let Some(selected_stream) = self.selected_stream.as_ref() {
-                    narrows.push(Narrow {
-                        operator: "stream".to_string(),
-                        operand: selected_stream.name.clone(),
-                        negated: false,
-                    });
-                }
-            }
-            if !narrows.iter().any(|x| x.operator == "topic") {
-                if let Some(selected_topic) = &self.selected_topic {
-                    narrows.push(Narrow {
-                        operator: "topic".to_string(),
-                        operand: selected_topic.clone(),
-                        negated: false,
-                    });
-                }
-            }
+            self.narrow_to_current(narrows);
         }
 
         let messages = self.backend.get_messages(req).await?.messages;
@@ -278,6 +294,72 @@ impl Client {
             self.cache.topics.insert(topic.to_string(), stream_id);
         }
         Ok(grouped_messages)
+    }
+
+    /// Update message flags for narrow.
+    pub async fn update_message_flags_for_narrow(
+        &mut self,
+        mut req: UpdateMessageFlagsForNarrowRequest,
+        regex: bool,
+        global: bool,
+    ) -> Result<UpdateMessageFlagsForNarrowResponse> {
+        let narrows = req.range.narrow.get_or_insert(Default::default());
+        if regex {
+            self.unregex_narrow(narrows.as_mut_slice()).await?;
+        }
+
+        // If no stream/topic was narrowed and `global` is `false` and a topic or stream is
+        // selected, add it to the list of narrows.
+        if !global {
+            self.narrow_to_current(narrows);
+        }
+
+        Ok(self.backend.update_message_flags_for_narrow(&req).await?)
+    }
+
+    /// Mark a bulk of messages read.
+    pub async fn mark_read(
+        &mut self,
+        stream: Option<zulib::Identifier>,
+        topic: Option<String>,
+        regex: bool,
+        global: bool,
+    ) -> Result<()> {
+        let stream_id = if let Some(stream) = stream {
+            Some(match stream {
+                zulib::Identifier::Id(x) => x,
+                zulib::Identifier::Name(name) if regex => {
+                    *self
+                        .stream_search(&mk_regex(&name)?)
+                        .await?
+                        .context("Stream not found")?
+                        .get_key_value()
+                        .0
+                }
+                zulib::Identifier::Name(name) => self.backend.get_stream_id(&name).await?,
+            })
+        } else if global {
+            self.selected_stream.as_ref().map(|x| x.stream_id)
+        } else {
+            None
+        };
+        if let Some(stream_id) = stream_id {
+            if let Some(topic) = topic {
+                let topic = if regex {
+                    self.topic_search(stream_id, &mk_regex(&topic)?)
+                        .await?
+                        .context("No such topic found")?
+                        .clone()
+                } else {
+                    topic
+                };
+                Ok(self.backend.mark_topic_as_read(stream_id, &topic).await?)
+            } else {
+                Ok(self.backend.mark_stream_as_read(stream_id).await?)
+            }
+        } else {
+            Ok(self.backend.mark_all_as_read().await?)
+        }
     }
 
     /// Select a stream by either a name or a regex for the name.

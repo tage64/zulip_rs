@@ -111,13 +111,9 @@ pub struct GetMessagesRequest {
     pub apply_markdown: bool,
 }
 
-/// Add or remove personal message flags like read and starred on a range of messages within a
-/// narrow.
+/// Information about updating a flag.
 #[derive(Serialize, Debug, Clone, clap::Parser)]
-pub struct UpdateMessageFlagsRequest {
-    #[clap(flatten)]
-    #[serde(flatten)]
-    pub range: MessageRange,
+pub struct UpdateFlag {
     /// Whether to add the flag or remove it.
     #[serde(rename = "op")]
     #[clap(value_enum)]
@@ -127,6 +123,29 @@ pub struct UpdateMessageFlagsRequest {
     flag: EditableFlag,
 }
 
+/// Add or remove personal message flags like read and starred on a list of messages.
+#[derive(Serialize, Debug, Clone, clap::Parser)]
+pub struct UpdateMessageFlagsRequest {
+    #[clap(flatten)]
+    #[serde(flatten)]
+    pub update: UpdateFlag,
+    /// A vector containing the IDs of the target messages.
+    #[serde(serialize_with = "serialize_as_json_str")]
+    messages: Vec<u64>,
+}
+
+/// Add or remove personal message flags like read and starred on a range of messages restrained by
+/// a narrow.
+#[derive(Serialize, Debug, Clone, clap::Parser)]
+pub struct UpdateMessageFlagsForNarrowRequest {
+    #[clap(flatten)]
+    #[serde(flatten)]
+    pub update: UpdateFlag,
+    #[clap(flatten)]
+    #[serde(flatten)]
+    pub range: MessageRange,
+}
+
 #[derive(Serialize, Debug, Clone, clap::ValueEnum)]
 #[serde(rename_all = "snake_case")]
 pub enum FlagOperation {
@@ -134,7 +153,8 @@ pub enum FlagOperation {
     Remove,
 }
 
-#[derive(Serialize, Debug, Clone, clap::ValueEnum)]
+/// A flag that can be edited by the user.
+#[derive(Serialize, Deserialize, Debug, Clone, clap::ValueEnum)]
 #[serde(rename_all = "snake_case")]
 pub enum EditableFlag {
     /// Whether the user has read the message. Messages start out unread (except for messages the
@@ -144,6 +164,28 @@ pub enum EditableFlag {
     Starred,
     /// Whether the user has collapsed this message.
     Collapsed,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+#[serde(rename_all = "snake_case")]
+pub enum Flag {
+    Editable(EditableFlag),
+    /// Whether the current user was mentioned by this message, either directly or via a user
+    /// group. Cannot be changed by the user directly, but can change if the message is edited to
+    /// add/remove a mention of the current user.
+    Mentioned,
+    /// Whether this message contained wildcard mention like @**all**. Cannot be changed by the
+    /// user directly, but can change if the message is edited to add/remove a wildcard mention.
+    WildcardMentioned,
+    /// Whether the message contains any of the current user's configured alert words. Cannot be
+    /// changed by the user directly, but can change if the message is edited to add/remove one of
+    /// the current user's alert words.
+    HasAlertWord,
+    /// True for messages that the user did not receive at the time they were sent but later was
+    /// added to the user's history (E.g. because they starred or reacted to a message sent to a
+    /// public stream before they subscribed to that stream). Cannot be changed by the user
+    /// directly.
+    Historical,
 }
 
 impl MessageRange {
@@ -265,7 +307,7 @@ pub struct ReceivedMessage {
     pub subject: String,
     pub r#type: MessageType,
     /// The user's message flags for the message.
-    pub flags: Vec<String>,
+    pub flags: Vec<Flag>,
     /// (Only present if keyword search was included among the narrow parameters.)
     /// HTML content of a queried message that matches the narrow, with <span class="highlight">
     /// elements wrapping the matches for the search keywords.
@@ -299,6 +341,35 @@ pub struct DisplayRecipientPrivateMessage {
     pub email: String,
     pub full_name: String,
     pub is_mirror_dummy: bool,
+}
+
+/// The response for a update message flag request.
+#[derive(Serialize, Deserialize, Debug)]
+pub struct UpdateMessageFlagsResponse {
+    /// A vector with the IDs of the modified messages.
+    messages: Vec<u64>,
+}
+
+/// The response for a update message flags for narrow request.
+#[derive(Serialize, Deserialize, Debug)]
+pub struct UpdateMessageFlagsForNarrowResponse {
+    /// The number of messages that were within the update range (at most num_before + 1 +
+    /// num_after).
+    pub processed_count: u64,
+    /// The number of messages where the flag's value was changed (at most processed_count).
+    pub update_count: u64,
+    /// The ID of the oldest message within the update range, or `None` if the range was empty.
+    pub first_processed_id: Option<u64>,
+    /// The ID of the newest message within the update range, or `None` if the range was empty.
+    pub last_processed_id: Option<u64>,
+    /// Whether the update range reached backward far enough to include very oldest message
+    /// matching the narrow (used by clients doing a bulk update to decide whether to issue another
+    /// request anchored at first_processed_id).
+    pub found_oldest: bool,
+    /// Whether the update range reached forward far enough to include very oldest message matching
+    /// the narrow (used by clients doing a bulk update to decide whether to issue another request
+    /// anchored at last_processed_id).
+    pub found_newest: bool,
 }
 
 /// A historical edit of a message.

@@ -99,9 +99,25 @@ impl Client {
         parse_response(response).await
     }
 
+    /// Add or remove personal message flags like read and starred on a list of messages.
+    pub async fn update_message_flags(
+        &self,
+        req: &UpdateMessageFlagsRequest,
+    ) -> Result<UpdateMessageFlagsResponse> {
+        let response = self
+            .http_client(Method::POST, "/api/v1/messages/flags")
+            .query(req)
+            .send()
+            .await?;
+        parse_response(response).await
+    }
+
     /// Add or remove personal message flags like read and starred on a range of messages within a
     /// narrow.
-    pub async fn update_message_flags(&self, req: &UpdateMessageFlagsRequest) -> Result<()> {
+    pub async fn update_message_flags_for_narrow(
+        &self,
+        req: &UpdateMessageFlagsForNarrowRequest,
+    ) -> Result<UpdateMessageFlagsForNarrowResponse> {
         let response = self
             .http_client(Method::GET, "/api/v1/messages/flags/narrow")
             .query(req)
@@ -109,6 +125,37 @@ impl Client {
             .await?;
         parse_response(response).await
     }
+
+    /// Marks all of the current user's unread messages as read.
+    pub async fn mark_all_as_read(&self) -> Result<()> {
+        let response = self
+            .http_client(Method::POST, "/api/v1/mark_all_as_read")
+            .send()
+            .await?;
+        parse_response(response).await
+    }
+
+    /// Mark all the unread messages in a stream as read.
+    pub async fn mark_stream_as_read(&self, stream_id: u64) -> Result<()> {
+        let response = self
+            .http_client(Method::POST, "/api/v1/mark_stream_as_read")
+            .query(&[("stream_id", stream_id)])
+            .send()
+            .await?;
+        parse_response(response).await
+    }
+
+    /// Mark all the unread messages in a topic as read.
+    pub async fn mark_topic_as_read(&self, stream_id: u64, topic_name: &str) -> Result<()> {
+        let response = self
+            .http_client(Method::POST, "/api/v1/mark_topic_as_read")
+            .query(&[("stream_id", stream_id)])
+            .query(&[("topic_name", topic_name)])
+            .send()
+            .await?;
+        parse_response(response).await
+    }
+
     pub async fn delete_message(&self, id: i64) -> Result<()> {
         let response = self
             .http_client(Method::DELETE, &format!("/api/v1/messages/{}", id))
