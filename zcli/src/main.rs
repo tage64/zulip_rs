@@ -266,7 +266,7 @@ impl ReplCommand {
 #[tokio::main]
 async fn main() -> Result<()> {
     let args = Args::parse();
-    flexi_logger::Logger::try_with_str("info, zulip=debug")
+    flexi_logger::Logger::try_with_str("info, zulip=debug, zulib=warn")
         .unwrap()
         .start()?;
 
