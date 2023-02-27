@@ -64,7 +64,7 @@ impl<T> Response<T> {
 async fn parse_response<T: DeserializeOwned>(response: reqwest::Response) -> Result<T> {
     let bytes = response.bytes().await?;
     // Uncomment the below line if you want to se the response in the log.
-    //log::debug!("Received responce: {}", String::from_utf8_lossy(&bytes));
+    log::debug!("Received responce: {}", String::from_utf8_lossy(&bytes));
     serde_json::from_slice::<Response<T>>(&bytes)?.into_result()
 }
 
