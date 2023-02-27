@@ -166,10 +166,10 @@ pub enum EditableFlag {
     Collapsed,
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone)]
+/// A flag that is set automaticly by the server.
+#[derive(Serialize, Deserialize, Debug, Clone, clap::ValueEnum)]
 #[serde(rename_all = "snake_case")]
-pub enum Flag {
-    Editable(EditableFlag),
+pub enum AutoFlag {
     /// Whether the current user was mentioned by this message, either directly or via a user
     /// group. Cannot be changed by the user directly, but can change if the message is edited to
     /// add/remove a mention of the current user.
@@ -185,7 +185,16 @@ pub enum Flag {
     /// added to the user's history (E.g. because they starred or reacted to a message sent to a
     /// public stream before they subscribed to that stream). Cannot be changed by the user
     /// directly.
+    #[serde(rename = "historical")]
     Historical,
+}
+
+/// Any kind of flag for a message.
+#[derive(Serialize, Deserialize, Debug, Clone)]
+#[serde(untagged, rename_all = "snake_case")]
+pub enum Flag {
+    Editable(EditableFlag),
+    Auto(AutoFlag),
 }
 
 impl MessageRange {
