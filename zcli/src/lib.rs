@@ -112,7 +112,8 @@ impl Client {
     }
 
     /// Search for a stream by a regex. First considers the local cache and if that fails fetches
-    /// subscribed streams from the server (ordered by weekly trafic). The found stream will be
+    /// subscribed streams from the server (ordered by weekly trafic). If that also failes, fetches
+    /// all streams from the server. The found stream will be
     /// added to (or promoted in) the cache.
     async fn stream_search(
         &mut self,
@@ -131,6 +132,15 @@ impl Client {
             if let Some(stream) = streams
                 .into_iter()
                 .map(|x| x.stream)
+                .filter(|x| re.is_match(&x.name))
+                .next()
+            {
+                Ok(Some(self.cache.streams.insert(stream.stream_id, stream)))
+            } else if let Some(stream) = self
+                .backend
+                .get_streams(&GetStreamsRequest::default())
+                .await?
+                .into_iter()
                 .filter(|x| re.is_match(&x.name))
                 .next()
             {
@@ -290,8 +300,9 @@ impl Client {
             })
             .sorted_unstable_by_key(|(_, msgs)| msgs[0].id);
         for (topic, messages) in grouped_messages.as_slice().iter() {
-            let stream_id = messages[0].stream_id.unwrap();
-            self.cache.topics.insert(topic.to_string(), stream_id);
+            if let Some(stream_id) = messages[0].stream_id {
+                self.cache.topics.insert(topic.to_string(), stream_id);
+            }
         }
         Ok(grouped_messages)
     }
