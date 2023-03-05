@@ -348,6 +348,19 @@ where
         self.levels.iter_mut().flat_map(|x| x.items.iter_mut())
     }
 
+    /// Iterate over indices to the elements in the cache so that all items on any level will come before any
+    /// item on any lower level.
+    ///
+    /// This does not alter the cache in any way. So no items are promoted to higher levels in the
+    /// cache when iterated over.
+    pub fn iter_indices(&self) -> impl DoubleEndedIterator<Item = Index<K, V, R>> + '_ {
+        self.levels.iter().enumerate().flat_map(move |(i, x)| {
+            (0..x.items.len())
+                .into_iter()
+                .map(move |j| Index::new(i, j, self))
+        })
+    }
+
     /// Find the first item in the cache matching a predicate.
     ///
     /// The advantage of using this method over `self.iter().find()` is that you get an `Entry`
@@ -494,17 +507,7 @@ impl<'a, K: Eq + Hash, V, R: Rng> Entry<'a, K, V, R> {
     /// invalidated though if the cache is altered in any way, including insertian of new elements
     /// or promotion of existing elements.
     pub fn index_and_cache(self) -> (Index<K, V, R>, &'a mut CommonCache<K, V, R>) {
-        (
-            Index {
-                level: self.level,
-                idx: self.idx,
-                generation: self.cache.generation,
-                _key_ty: PhantomData,
-                _val_ty: PhantomData,
-                _rng_ty: PhantomData,
-            },
-            self.cache,
-        )
+        (Index::new(self.level, self.idx, self.cache), self.cache)
     }
 }
 
@@ -536,6 +539,18 @@ pub struct Index<K, V, R: Rng = StdRng> {
 }
 
 impl<K: Eq + Hash, V, R: Rng> Index<K, V, R> {
+    /// Create a new index from a level and an index on that level.
+    fn new(level: usize, idx: usize, in_cache: &CommonCache<K, V, R>) -> Self {
+        Self {
+            level,
+            idx,
+            generation: in_cache.generation,
+            _key_ty: PhantomData,
+            _val_ty: PhantomData,
+            _rng_ty: PhantomData,
+        }
+    }
+
     /// Assert that this index has the same generation as that of a cache. Panics otherwise.
     fn assert_generation(&self, cache: &CommonCache<K, V, R>) {
         assert_eq!(
