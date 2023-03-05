@@ -301,7 +301,7 @@ async fn main() -> Result<()> {
 /// Generate a prompt string.
 fn prompt_str(client: &mut Client) -> String {
     if let Some(stream) = client.selected_stream() {
-        format!("(zcli)->{} ", stream.name)
+        format!("(zcli)->{}: ", stream.name)
     } else {
         "(zcli) ".to_string()
     }
