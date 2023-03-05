@@ -38,7 +38,10 @@ where
     super_command = Cmds::augment_subcommands(super_command);
 
     // Initiate the Read Eval Print LOOP!
-    let mut rl = rustyline::Editor::<()>::new()?;
+    let mut rl = rustyline::Editor::<(), rustyline::history::MemHistory>::with_history(
+        rustyline::Config::builder().auto_add_history(true).build(),
+        Default::default(),
+    )?;
     loop {
         match rl.readline(&prompt(data)) {
             Ok(line) => {

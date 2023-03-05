@@ -8,5 +8,5 @@ edition = "2021"
 [dependencies]
 anyhow = "1.0.68"
 clap = { workspace = true, features = ["wrap_help"] }
-rustyline = "10.0.0"
+rustyline = "11.0.0"
 shlex = "1.1.0"
