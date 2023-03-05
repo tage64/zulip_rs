@@ -18,6 +18,7 @@ iter_tools = "0.1.4"
 regex = "1.7.0"
 serde = { version = "1.0.147", features = ["derive"] }
 serde_json = "1.0.91"
+skim = "0.10.4"
 textwrap = { version = "0.16.0", features = ["terminal_size"] }
 tokio = { version = "1.23.0", features = ["rt", "macros", "rt-multi-thread"], default-features = false }
 zulib = { version = "0.2.0", path = "../zulib" }

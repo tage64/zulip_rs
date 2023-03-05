@@ -4,7 +4,9 @@ use derive_more::Deref;
 use iter_tools::Itertools as _;
 use regex::{Regex, RegexBuilder};
 use serde::{Deserialize, Serialize};
+use std::borrow::Cow;
 use std::collections::HashMap;
+use std::sync::Arc;
 use zulib::{message::*, stream::*};
 
 #[derive(Debug, Deref)]
@@ -148,6 +150,88 @@ impl Client {
             } else {
                 Ok(None)
             }
+        }
+    }
+
+    async fn search_stream<T>(
+        &mut self,
+        mut f: impl FnMut(&Stream) -> Option<T>,
+    ) -> Result<Option<T>> {
+        for (_, stream) in self.cache.streams.iter() {
+            if let Some(x) = f(stream) {
+                return Ok(Some(x));
+            }
+        }
+        let mut streams = self.backend.get_subscribed_streams().await?;
+        streams.sort_unstable_by_key(|x| x.stream_weekly_trafic);
+        for stream in streams.into_iter().map(|x| x.stream) {
+            let entry = self.cache.streams.insert(stream.stream_id, stream);
+            if let Some(x) = f(entry.peek_value()) {
+                return Ok(Some(x));
+            }
+        }
+        for stream in self
+            .backend
+            .get_streams(&GetStreamsRequest::default())
+            .await?
+        {
+            let entry = self.cache.streams.insert(stream.stream_id, stream);
+            if let Some(x) = f(entry.peek_value()) {
+                return Ok(Some(x));
+            }
+        }
+        Ok(None)
+    }
+
+    async fn stream_skim(&mut self) -> Result<Option<common_cache::Entry<'_, u64, Stream>>> {
+        struct SkimStream {
+            stream_id: u64,
+            name: String,
+        }
+        impl SkimStream {
+            fn new(stream: &Stream) -> Self {
+                Self {
+                    stream_id: stream.stream_id,
+                    name: stream.name.clone(),
+                }
+            }
+        }
+        impl skim::SkimItem for SkimStream {
+            fn text(&self) -> Cow<'_, str> {
+                Cow::Borrowed(&self.name)
+            }
+        }
+
+        let (streams_sender, streams_receiver) = skim::prelude::bounded(0);
+        let skim_thread = std::thread::spawn(|| {
+            skim::Skim::run_with(&Default::default(), Some(streams_receiver))
+        });
+        if self
+            .search_stream(|stream| streams_sender.send(Arc::new(SkimStream::new(stream))).err())
+            .await?
+            .is_some()
+        {
+            let skim_output = skim_thread.join().unwrap().unwrap();
+            let Some(skim_item) = skim_output.selected_items.first() else {
+                return Ok(None);
+            };
+            // Skim has a really weird way of getting the selected item.
+            let stream_id = skim_item
+                .as_any()
+                .downcast_ref::<SkimStream>()
+                .unwrap()
+                .stream_id;
+            if let Some(entry) = self.cache.streams.entry(&stream_id) {
+                // The following litle cowboy-dance with entries and indices exists to satisfy
+                // the borrow checker.
+                Ok(Some(entry.index().entry(&mut self.cache.streams)))
+            } else {
+                // The selected stream is not in the cache, so we fetch it from the server.
+                let stream = self.backend.get_stream_by_id(stream_id).await?;
+                Ok(Some(self.cache.streams.insert(stream.stream_id, stream)))
+            }
+        } else {
+            Ok(None)
         }
     }
 
