@@ -1,7 +1,6 @@
+use pest::Parser;
 use pest_derive::*;
 use serde::Deserialize;
-
-use pest::Parser;
 
 #[derive(Parser)]
 #[grammar = "rc.pest"]

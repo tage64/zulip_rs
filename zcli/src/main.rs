@@ -1,7 +1,8 @@
+use std::ops::ControlFlow;
+
 use anyhow::*;
 use chrono_humanize::HumanTime;
 use clap::Parser as _;
-use std::ops::ControlFlow;
 use zcli::Client;
 use zulib::message::*;
 use zulib::stream::*;
@@ -31,30 +32,36 @@ enum Command {
     Send(SendMessageRequest),
     /// Mark all messages, possibly in a specific stream or topic, as read.
     MarkRead {
-        /// Specify a stream in which to mark as read. Otherwise all of your messages will be read.
+        /// Specify a stream in which to mark as read. Otherwise all of your
+        /// messages will be read.
         ///
-        /// The stream should be a stream id or a name, which can optionally be a regex.
+        /// The stream should be a stream id or a name, which can optionally be
+        /// a regex.
         stream: Option<zulib::Identifier>,
         /// Specify a topic to mark as read.
         topic: Option<String>,
-        /// Interpret the "stream" and "topic" names as regular expressions and try to find the
-        /// corresponding stream/topic.
+        /// Interpret the "stream" and "topic" names as regular expressions and
+        /// try to find the corresponding stream/topic.
         ///
-        /// This will first consider the most recently/commonly used estreams/topics, and then
-        /// fetch streams or topics from the server. If not found in the local cache, only topics
-        /// from the searched or else currently selected stream will be considered.
+        /// This will first consider the most recently/commonly used
+        /// estreams/topics, and then fetch streams or topics from the
+        /// server. If not found in the local cache, only topics
+        /// from the searched or else currently selected stream will be
+        /// considered.
         #[clap(short, long)]
         regex: bool,
     },
     UpdateFlags {
         #[clap(flatten)]
         req: UpdateMessageFlagsForNarrowRequest,
-        /// Interpret the "stream" and "topic" names as regular expressions and try to find the
-        /// corresponding stream/topic.
+        /// Interpret the "stream" and "topic" names as regular expressions and
+        /// try to find the corresponding stream/topic.
         ///
-        /// This will first consider the most recently/commonly used estreams/topics, and then
-        /// fetch streams or topics from the server. If not found in the local cache, only topics
-        /// from the searched or else currently selected stream will be considered.
+        /// This will first consider the most recently/commonly used
+        /// estreams/topics, and then fetch streams or topics from the
+        /// server. If not found in the local cache, only topics
+        /// from the searched or else currently selected stream will be
+        /// considered.
         #[clap(short, long)]
         regex: bool,
     },
@@ -68,15 +75,18 @@ enum Ls {
     Messages {
         #[clap(flatten)]
         req: GetMessagesRequest,
-        /// Interpret the "stream" and "topic" queries as regular expressions and try to find the
-        /// corresponding stream/topic.
+        /// Interpret the "stream" and "topic" queries as regular expressions
+        /// and try to find the corresponding stream/topic.
         ///
-        /// This will first consider the most recently/commonly used estreams/topics, and then
-        /// fetch streams or topics from the server. If not found in the local cache, only topics
-        /// from the searched or else currently selected stream will be considered.
+        /// This will first consider the most recently/commonly used
+        /// estreams/topics, and then fetch streams or topics from the
+        /// server. If not found in the local cache, only topics
+        /// from the searched or else currently selected stream will be
+        /// considered.
         #[clap(short, long)]
         regex: bool,
-        /// Only print the name of all topics and the timestamp of their last message.
+        /// Only print the name of all topics and the timestamp of their last
+        /// message.
         #[clap(short, long)]
         only_topics: bool,
     },

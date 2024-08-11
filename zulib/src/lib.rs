@@ -3,13 +3,14 @@ pub mod message;
 mod rc;
 pub mod stream;
 
+use std::str::FromStr;
+
 pub use client::{Client, Error, Result};
 pub use rc::ZulipRc;
 use serde::{Deserialize, Serialize};
-use std::str::FromStr;
 
-/// An identifier for E.G a stream or a message which both can be referenced by an integer or a
-/// name.
+/// An identifier for E.G a stream or a message which both can be referenced by
+/// an integer or a name.
 #[derive(Serialize, Deserialize, Debug, Clone)]
 #[serde(untagged)]
 pub enum Identifier {

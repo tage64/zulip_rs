@@ -1,6 +1,7 @@
-use crate::Identifier;
 use chrono::prelude::*;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
+
+use crate::Identifier;
 mod narrow;
 pub use narrow::Narrow;
 
@@ -33,15 +34,16 @@ pub enum SendMessageRequest {
 
 /// Type of anchor when retreiving messages.
 ///
-/// `Anchor::Newest`, `Anchor::Oldest` and `Anchor::FirstUnread` are new in Zulip 3.0 (feature
-/// level 1).
+/// `Anchor::Newest`, `Anchor::Oldest` and `Anchor::FirstUnread` are new in
+/// Zulip 3.0 (feature level 1).
 #[derive(Debug, Clone, Copy, clap::ValueEnum)]
 pub enum Anchor {
     /// The most recent message.
     Newest,
     /// The oldest message.
     Oldest,
-    /// The oldest unread message matching the query, if any; otherwise, the most recent message.
+    /// The oldest unread message matching the query, if any; otherwise, the
+    /// most recent message.
     FirstUnread,
     /// Integer message ID to anchor fetching of new messages.
     #[clap(skip)]
@@ -55,7 +57,8 @@ pub struct MessageRange {
     #[serde(serialize_with = "serialize_as_json_str")]
     #[clap(short = 'c', long, value_enum, default_value_t = Anchor::Newest)]
     pub anchor: Anchor,
-    /// Whether a message with the specified ID matching the narrow should be included.
+    /// Whether a message with the specified ID matching the narrow should be
+    /// included.
     ///
     /// New in Zulip 6.0 (feature level 155).
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -67,18 +70,20 @@ pub struct MessageRange {
     /// The number of messages with IDs greater than the anchor to retrieve.
     #[clap(short = 'a', long, default_value_t = 10)]
     pub num_after: u64,
-    /// The narrow (set of message filters) where you want to fetch the messages from.
+    /// The narrow (set of message filters) where you want to fetch the messages
+    /// from.
     ///
-    /// Note that many narrows, including all that lack a stream or streams operator, search the
-    /// user's personal message history. See
+    /// Note that many narrows, including all that lack a stream or streams
+    /// operator, search the user's personal message history. See
     /// [here](https://zulip.com/help/search-for-messages#searching-shared-history) for details.
-    /// For example, if you would like to fetch messages from all public streams instead of only
-    /// the user's message history, then a specific narrow for messages sent to all public streams
-    /// can be used: {"operator": "streams", "operand": "public"}.
+    /// For example, if you would like to fetch messages from all public streams
+    /// instead of only the user's message history, then a specific narrow
+    /// for messages sent to all public streams can be used: {"operator":
+    /// "streams", "operand": "public"}.
     ///
-    /// Newly created bot users are not usually subscribed to any streams, so bots using this API
-    /// should either be subscribed to appropriate streams or use a shared history search narrow
-    /// with this endpoint.
+    /// Newly created bot users are not usually subscribed to any streams, so
+    /// bots using this API should either be subscribed to appropriate
+    /// streams or use a shared history search narrow with this endpoint.
     #[serde(
         serialize_with = "serialize_as_json_str",
         skip_serializing_if = "Option::is_none"
@@ -96,17 +101,20 @@ pub struct GetMessagesRequest {
     /// Whether the client supports computing gravatars URLs.
     ///
     /// If enabled, avatar_url will be
-    /// included in the response only if there is a Zulip avatar, and will be null for users who
-    /// are using gravatar as their avatar. This option significantly reduces the compressed size
-    /// of user data, since gravatar URLs are long, random strings and thus do not compress well.
+    /// included in the response only if there is a Zulip avatar, and will be
+    /// null for users who are using gravatar as their avatar. This option
+    /// significantly reduces the compressed size of user data, since
+    /// gravatar URLs are long, random strings and thus do not compress well.
     ///
-    /// The client_gravatar field should be set to true if clients can compute their own gravatars.
+    /// The client_gravatar field should be set to true if clients can compute
+    /// their own gravatars.
     #[clap(skip = true)]
     pub client_gravatar: bool,
     /// Convert the content from markdown to HTML on the server.
     ///
-    /// If true, message content is returned in the rendered HTML format. If false, message content
-    /// is returned in the raw Markdown-format text that user entered.
+    /// If true, message content is returned in the rendered HTML format. If
+    /// false, message content is returned in the raw Markdown-format text
+    /// that user entered.
     #[clap(long)]
     pub apply_markdown: bool,
 }
@@ -123,7 +131,8 @@ pub struct UpdateFlag {
     flag: EditableFlag,
 }
 
-/// Add or remove personal message flags like read and starred on a list of messages.
+/// Add or remove personal message flags like read and starred on a list of
+/// messages.
 #[derive(Serialize, Debug, Clone, clap::Parser)]
 pub struct UpdateMessageFlagsRequest {
     #[clap(flatten)]
@@ -134,8 +143,8 @@ pub struct UpdateMessageFlagsRequest {
     messages: Vec<u64>,
 }
 
-/// Add or remove personal message flags like read and starred on a range of messages restrained by
-/// a narrow.
+/// Add or remove personal message flags like read and starred on a range of
+/// messages restrained by a narrow.
 #[derive(Serialize, Debug, Clone, clap::Parser)]
 pub struct UpdateMessageFlagsForNarrowRequest {
     #[clap(flatten)]
@@ -157,8 +166,9 @@ pub enum FlagOperation {
 #[derive(Serialize, Deserialize, Debug, Clone, clap::ValueEnum)]
 #[serde(rename_all = "snake_case")]
 pub enum EditableFlag {
-    /// Whether the user has read the message. Messages start out unread (except for messages the
-    /// user themself sent using a non-API client) and can later be marked as read.
+    /// Whether the user has read the message. Messages start out unread (except
+    /// for messages the user themself sent using a non-API client) and can
+    /// later be marked as read.
     Read,
     /// Whether the user has starred this message.
     Starred,
@@ -170,21 +180,24 @@ pub enum EditableFlag {
 #[derive(Serialize, Deserialize, Debug, Clone, clap::ValueEnum)]
 #[serde(rename_all = "snake_case")]
 pub enum AutoFlag {
-    /// Whether the current user was mentioned by this message, either directly or via a user
-    /// group. Cannot be changed by the user directly, but can change if the message is edited to
-    /// add/remove a mention of the current user.
+    /// Whether the current user was mentioned by this message, either directly
+    /// or via a user group. Cannot be changed by the user directly, but can
+    /// change if the message is edited to add/remove a mention of the
+    /// current user.
     Mentioned,
-    /// Whether this message contained wildcard mention like @**all**. Cannot be changed by the
-    /// user directly, but can change if the message is edited to add/remove a wildcard mention.
+    /// Whether this message contained wildcard mention like @**all**. Cannot be
+    /// changed by the user directly, but can change if the message is
+    /// edited to add/remove a wildcard mention.
     WildcardMentioned,
-    /// Whether the message contains any of the current user's configured alert words. Cannot be
-    /// changed by the user directly, but can change if the message is edited to add/remove one of
-    /// the current user's alert words.
+    /// Whether the message contains any of the current user's configured alert
+    /// words. Cannot be changed by the user directly, but can change if the
+    /// message is edited to add/remove one of the current user's alert
+    /// words.
     HasAlertWord,
-    /// True for messages that the user did not receive at the time they were sent but later was
-    /// added to the user's history (E.g. because they starred or reacted to a message sent to a
-    /// public stream before they subscribed to that stream). Cannot be changed by the user
-    /// directly.
+    /// True for messages that the user did not receive at the time they were
+    /// sent but later was added to the user's history (E.g. because they
+    /// starred or reacted to a message sent to a public stream before they
+    /// subscribed to that stream). Cannot be changed by the user directly.
     #[serde(rename = "historical")]
     Historical,
 }
@@ -247,19 +260,23 @@ pub struct GetMessagesResponse {
     /// The same anchor specified in the request (or the computed one, if
     /// `GetMessagesRequest::anchor` was set to `Anchor::FirstUnread`).
     pub anchor: u64,
-    /// Whether the messages list includes the very newest messages matching the narrow (used by
-    /// clients that paginate their requests to decide whether there are more messages to fetch).
+    /// Whether the messages list includes the very newest messages matching the
+    /// narrow (used by clients that paginate their requests to decide
+    /// whether there are more messages to fetch).
     pub found_newest: bool,
-    /// Whether the messages list includes the very oldest messages matching the narrow (used by
-    /// clients that paginate their requests to decide whether there are more messages to fetch).
+    /// Whether the messages list includes the very oldest messages matching the
+    /// narrow (used by clients that paginate their requests to decide
+    /// whether there are more messages to fetch).
     pub found_oldest: Option<bool>,
-    /// Whether the anchor message is included in the response. If the message with the ID
-    /// specified in the request does not exist, did not match the narrow, or was excluded via
-    /// include_anchor=false, this will be false.
+    /// Whether the anchor message is included in the response. If the message
+    /// with the ID specified in the request does not exist, did not match
+    /// the narrow, or was excluded via include_anchor=false, this will be
+    /// false.
     pub found_anchor: bool,
     /// Whether the message history was limited due to plan restrictions.
     ///
-    /// This flag is set to true only when the oldest messages(found_oldest) matching the narrow is fetched.
+    /// This flag is set to true only when the oldest messages(found_oldest)
+    /// matching the narrow is fetched.
     pub history_limited: Option<bool>,
     /// The retreived messages.
     pub messages: Vec<ReceivedMessage>,
@@ -274,12 +291,13 @@ pub struct ReceivedMessage {
     pub timestamp: DateTime<Utc>,
     /// The content/body of the message.
     pub content: String,
-    /// The HTTP content_type for the message content. This will be text/html or text/x-markdown,
-    /// depending on whether apply_markdown was set.
+    /// The HTTP content_type for the message content. This will be text/html or
+    /// text/x-markdown, depending on whether apply_markdown was set.
     pub content_type: String,
-    /// The URL of the user's avatar. Can be null only if client_gravatar was passed, which means
-    /// that the user has not uploaded an avatar in Zulip, and the client should compute the
-    /// gravatar URL by hashing the user's email address itself for this user.
+    /// The URL of the user's avatar. Can be null only if client_gravatar was
+    /// passed, which means that the user has not uploaded an avatar in
+    /// Zulip, and the client should compute the gravatar URL by hashing the
+    /// user's email address itself for this user.
     pub avatar_url: Option<String>,
     /// A Zulip "client" string, describing what Zulip client sent the message.
     pub client: String,
@@ -290,15 +308,16 @@ pub struct ReceivedMessage {
     /// `None` if the message has never been edited.
     #[serde(default, deserialize_with = "deserialize_timestamp_to_option")]
     pub last_edit_timestamp: Option<DateTime<Utc>>,
-    /// A list of edits, with each element documenting the changes in a previous edit made to
-    /// the the message, ordered chronologically from most recent to least recent edit.
+    /// A list of edits, with each element documenting the changes in a previous
+    /// edit made to the the message, ordered chronologically from most
+    /// recent to least recent edit.
     pub edit_history: Option<Vec<EditHistory>>,
     /// Whether the message is a /me status message.
     pub is_me_message: bool,
     /// Reactions to the message.
     pub reactions: Vec<Reaction>,
-    /// A unique ID for the set of users receiving the message (either a stream or group of users).
-    /// Useful primarily for hashing.
+    /// A unique ID for the set of users receiving the message (either a stream
+    /// or group of users). Useful primarily for hashing.
     pub recipient_id: u64,
     /// The Zulip display email address of the message's sender.
     pub sender_email: String,
@@ -306,8 +325,8 @@ pub struct ReceivedMessage {
     pub sender_full_name: String,
     /// The user ID of the message's sender.
     pub sender_id: u64,
-    /// A string identifier for the realm the sender is in. Unique only within the context of a
-    /// given Zulip server.
+    /// A string identifier for the realm the sender is in. Unique only within
+    /// the context of a given Zulip server.
     ///
     /// E.g. on example.zulip.com, this will be example.
     pub sender_realm_str: String,
@@ -317,13 +336,15 @@ pub struct ReceivedMessage {
     pub r#type: MessageType,
     /// The user's message flags for the message.
     pub flags: Vec<Flag>,
-    /// (Only present if keyword search was included among the narrow parameters.)
-    /// HTML content of a queried message that matches the narrow, with <span class="highlight">
-    /// elements wrapping the matches for the search keywords.
+    /// (Only present if keyword search was included among the narrow
+    /// parameters.) HTML content of a queried message that matches the
+    /// narrow, with <span class="highlight"> elements wrapping the matches
+    /// for the search keywords.
     pub match_content: Option<String>,
-    /// (Only present if keyword search was included among the narrow parameters.)
-    /// HTML-escaped topic of a queried message that matches the narrow, with <span
-    /// class="highlight"> elements wrapping the matches for the search keywords.
+    /// (Only present if keyword search was included among the narrow
+    /// parameters.) HTML-escaped topic of a queried message that matches
+    /// the narrow, with <span class="highlight"> elements wrapping the
+    /// matches for the search keywords.
     pub match_subject: Option<String>,
 }
 
@@ -362,22 +383,27 @@ pub struct UpdateMessageFlagsResponse {
 /// The response for a update message flags for narrow request.
 #[derive(Serialize, Deserialize, Debug)]
 pub struct UpdateMessageFlagsForNarrowResponse {
-    /// The number of messages that were within the update range (at most num_before + 1 +
-    /// num_after).
+    /// The number of messages that were within the update range (at most
+    /// num_before + 1 + num_after).
     pub processed_count: u64,
-    /// The number of messages where the flag's value was changed (at most processed_count).
+    /// The number of messages where the flag's value was changed (at most
+    /// processed_count).
     pub update_count: u64,
-    /// The ID of the oldest message within the update range, or `None` if the range was empty.
+    /// The ID of the oldest message within the update range, or `None` if the
+    /// range was empty.
     pub first_processed_id: Option<u64>,
-    /// The ID of the newest message within the update range, or `None` if the range was empty.
+    /// The ID of the newest message within the update range, or `None` if the
+    /// range was empty.
     pub last_processed_id: Option<u64>,
-    /// Whether the update range reached backward far enough to include very oldest message
-    /// matching the narrow (used by clients doing a bulk update to decide whether to issue another
-    /// request anchored at first_processed_id).
+    /// Whether the update range reached backward far enough to include very
+    /// oldest message matching the narrow (used by clients doing a bulk
+    /// update to decide whether to issue another request anchored at
+    /// first_processed_id).
     pub found_oldest: bool,
-    /// Whether the update range reached forward far enough to include very oldest message matching
-    /// the narrow (used by clients doing a bulk update to decide whether to issue another request
-    /// anchored at last_processed_id).
+    /// Whether the update range reached forward far enough to include very
+    /// oldest message matching the narrow (used by clients doing a bulk
+    /// update to decide whether to issue another request anchored at
+    /// last_processed_id).
     pub found_newest: bool,
 }
 
@@ -390,8 +416,9 @@ pub struct EditHistory {
     /// The ID of the user that made the edit.
     ///
     /// Will be `None` only for edit history events predating March 2017.
-    /// Clients can display edit history events where this `None` as modified by either the sender
-    /// (for content edits) or an unknown user (for topic edits).
+    /// Clients can display edit history events where this `None` as modified by
+    /// either the sender (for content edits) or an unknown user (for topic
+    /// edits).
     pub user_id: Option<u64>,
     /// The content of the message immediately prior to this edit event.
     ///
@@ -401,11 +428,13 @@ pub struct EditHistory {
     ///
     /// Only present if message's content was edited.
     pub prev_rendered_content: Option<String>,
-    /// The Markdown processor version number for the message immediately prior to this edit event.
+    /// The Markdown processor version number for the message immediately prior
+    /// to this edit event.
     ///
     /// Only present if message's content was edited.
     pub prev_rendered_content_version: Option<u64>,
-    /// The ID of the stream containing the message immediately after this edit event.
+    /// The ID of the stream containing the message immediately after this edit
+    /// event.
     ///
     /// Only present if message's stream was edited.
     pub stream: Option<u64>,
@@ -572,8 +601,8 @@ fn serialize_as_json_str<S: Serializer, T: Serialize>(
 ) -> Result<S::Ok, S::Error> {
     let ser_json =
         serde_json::to_string(value).map_err(|e| <S::Error as serde::ser::Error>::custom(e))?;
-    // This is a real hack: If the serialized json happens to be a string, we don't want to include
-    // the quotes.
+    // This is a real hack: If the serialized json happens to be a string, we don't
+    // want to include the quotes.
     let relevant_str = if ser_json.starts_with('"') && ser_json.ends_with('"') {
         &ser_json[1..ser_json.len() - 1]
     } else {

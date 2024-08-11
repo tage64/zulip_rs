@@ -1,22 +1,23 @@
+use reqwest::{Method, RequestBuilder};
+use serde::{de::DeserializeOwned, Deserialize};
+
 use crate::message::*;
 use crate::stream::*;
 use crate::ZulipRc;
-use reqwest::{Method, RequestBuilder};
-use serde::{de::DeserializeOwned, Deserialize};
 
 /// An error that might occur when making a reqwest to the Zulip server.
 #[derive(thiserror::Error, Debug)]
 pub enum Error {
     /// A response from the server that the requested operation failed.
     ///
-    /// This is usually a recoverable error. It might for instance occur when one tries to send a
-    /// message to a user that does not exist.
+    /// This is usually a recoverable error. It might for instance occur when
+    /// one tries to send a message to a user that does not exist.
     #[error("Unsuccessful: {code}, {msg}")]
     Unsuccessful {
         /// This is a short string acting as identifier for the error.
         ///
-        /// It is named "code" in the API so we keep that name although it  might be a bit
-        /// confusing.
+        /// It is named "code" in the API so we keep that name although it
+        /// might be a bit confusing.
         code: String,
         /// A message from the server regarding the error.
         msg: String,
@@ -24,7 +25,8 @@ pub enum Error {
         stream: Option<String>,
     },
 
-    /// The parsing of the JSON data in the response body (from the server) failed.
+    /// The parsing of the JSON data in the response body (from the server)
+    /// failed.
     #[error("Failed to parse response body")]
     BadResponse(#[from] serde_json::Error),
 
@@ -35,10 +37,11 @@ pub enum Error {
 
 pub type Result<T, E = Error> = std::result::Result<T, E>;
 
-/// A response from the server in a unified format parameterized by the type of data we want to
-/// retrieve.
+/// A response from the server in a unified format parameterized by the type of
+/// data we want to retrieve.
 ///
-/// This is primarily used for deserializing the response and should be converted to a `Result<T>`.
+/// This is primarily used for deserializing the response and should be
+/// converted to a `Result<T>`.
 #[derive(serde::Serialize, Deserialize, Debug)]
 #[serde(tag = "result", rename_all = "snake_case")]
 enum Response<T> {
@@ -59,8 +62,8 @@ impl<T> Response<T> {
     }
 }
 
-/// Parse a JSON response from the server and convert it to a `Result<T>` where `T` is the type of
-/// the requested data.
+/// Parse a JSON response from the server and convert it to a `Result<T>` where
+/// `T` is the type of the requested data.
 async fn parse_response<T: DeserializeOwned>(response: reqwest::Response) -> Result<T> {
     let bytes = response.bytes().await?;
     // Uncomment the below line if you want to se the response in the log.
@@ -99,7 +102,8 @@ impl Client {
         parse_response(response).await
     }
 
-    /// Add or remove personal message flags like read and starred on a list of messages.
+    /// Add or remove personal message flags like read and starred on a list of
+    /// messages.
     pub async fn update_message_flags(
         &self,
         req: &UpdateMessageFlagsRequest,
@@ -112,8 +116,8 @@ impl Client {
         parse_response(response).await
     }
 
-    /// Add or remove personal message flags like read and starred on a range of messages within a
-    /// narrow.
+    /// Add or remove personal message flags like read and starred on a range of
+    /// messages within a narrow.
     pub async fn update_message_flags_for_narrow(
         &self,
         req: &UpdateMessageFlagsForNarrowRequest,
@@ -265,13 +269,15 @@ impl Client {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use crate::Identifier;
+    use std::net::SocketAddr;
+
     use httpmock::{
         Method::{DELETE, GET, POST},
         MockServer,
     };
-    use std::net::SocketAddr;
+
+    use super::*;
+    use crate::Identifier;
 
     /// Creat a client for testing based on the socket address to the server.
     fn test_client(socket_addr: &SocketAddr) -> Client {

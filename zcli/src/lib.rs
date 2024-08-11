@@ -1,12 +1,13 @@
+use std::borrow::Cow;
+use std::collections::HashMap;
+use std::sync::Arc;
+
 use anyhow::{bail, Context, Result};
 use common_cache::CommonCache;
 use derive_more::Deref;
 use iter_tools::Itertools as _;
 use regex::{Regex, RegexBuilder};
 use serde::{Deserialize, Serialize};
-use std::borrow::Cow;
-use std::collections::HashMap;
-use std::sync::Arc;
 use zulib::{message::*, stream::*};
 
 #[derive(Debug, Deref)]
@@ -16,8 +17,8 @@ pub struct Client {
 
     /// The currently selected stream, if any.
     selected_stream: Option<Stream>,
-    /// The currently selected topic if any. If `selected_stream` is `None` then must also
-    /// `selected_topic` be `None`.
+    /// The currently selected topic if any. If `selected_stream` is `None` then
+    /// must also `selected_topic` be `None`.
     selected_topic: Option<String>,
     cache: Cache,
 }
@@ -25,9 +26,11 @@ pub struct Client {
 /// Some useful caches.
 #[derive(Debug, Deserialize, Serialize, Clone)]
 struct Cache {
-    /// A cache with recently used streams. Stream ids as keys and stream objects as values.
+    /// A cache with recently used streams. Stream ids as keys and stream
+    /// objects as values.
     streams: CommonCache<u64, Stream>,
-    /// A cache with recently read topics. Topic names as keys and stream id as value.
+    /// A cache with recently read topics. Topic names as keys and stream id as
+    /// value.
     topics: CommonCache<String, u64>,
 }
 
@@ -53,17 +56,20 @@ impl Client {
         })
     }
 
-    /// Get the content of the cache file a(as it would be right now) as a string.
+    /// Get the content of the cache file a(as it would be right now) as a
+    /// string.
     pub fn mk_cache_file(&self) -> String {
         serde_json::to_string_pretty(&self.cache).unwrap()
     }
 
-    /// Iterate over all streams in the cache, from most to least commonly/recently used.
+    /// Iterate over all streams in the cache, from most to least
+    /// commonly/recently used.
     pub fn stream_cache_iter(&self) -> impl DoubleEndedIterator<Item = &Stream> {
         self.cache.streams.iter().map(|(_, x)| x)
     }
 
-    /// Iterate over all topics in the cache, from most to least commonly/recently used.
+    /// Iterate over all topics in the cache, from most to least
+    /// commonly/recently used.
     pub fn topic_cache_iter(&self) -> impl DoubleEndedIterator<Item = &str> {
         self.cache.topics.iter().map(|(x, _)| x.as_str())
     }
@@ -74,9 +80,10 @@ impl Client {
         self.cache.topics.clear();
     }
 
-    /// Get an iterator of all streams (filtered by a `GetStreamsRequest`) in  order, with
-    /// unsubscribed streams first, and then subscribed streams sorted by weekly trafic from lowest
-    /// to highest. Nothing will be added to the cache.
+    /// Get an iterator of all streams (filtered by a `GetStreamsRequest`) in
+    /// order, with unsubscribed streams first, and then subscribed streams
+    /// sorted by weekly trafic from lowest to highest. Nothing will be
+    /// added to the cache.
     pub async fn get_streams(
         &self,
         req: &GetStreamsRequest,
@@ -101,7 +108,8 @@ impl Client {
     }
 
     /// Get an iterator of streams matching a regex, in order with most
-    /// commonly and recently used stream first. Only locally cached streams are considered.
+    /// commonly and recently used stream first. Only locally cached streams are
+    /// considered.
     pub fn stream_search_in_cache<'a>(
         &'a self,
         re: &'a Regex,
@@ -113,10 +121,11 @@ impl Client {
             .filter(|stream| re.is_match(&stream.name))
     }
 
-    /// Search for a stream by a regex. First considers the local cache and if that fails fetches
-    /// subscribed streams from the server (ordered by weekly trafic). If that also failes, fetches
-    /// all streams from the server. The found stream will be
-    /// added to (or promoted in) the cache.
+    /// Search for a stream by a regex. First considers the local cache and if
+    /// that fails fetches subscribed streams from the server (ordered by
+    /// weekly trafic). If that also failes, fetches all streams from the
+    /// server. The found stream will be added to (or promoted in) the
+    /// cache.
     async fn stream_search(
         &mut self,
         re: &Regex,
@@ -237,8 +246,9 @@ impl Client {
 
     /// Search for a topic in a stream.
     ///
-    /// First considers all cached topics for that particular stream, and then fetches all topics
-    /// from the server and inserts the found topic into the cache.
+    /// First considers all cached topics for that particular stream, and then
+    /// fetches all topics from the server and inserts the found topic into
+    /// the cache.
     ///
     /// Returns the name of the topic.
     async fn topic_search(&mut self, stream_id: u64, re: &Regex) -> Result<Option<&'_ String>> {
@@ -265,9 +275,10 @@ impl Client {
         }
     }
 
-    /// Get a stream by id. Either from the local cache or fetched from the server. It'll be
-    /// promoted in the local cache, so don't use this for a large number of automated calls if you
-    /// don't want the user to think that this stream is used alot.
+    /// Get a stream by id. Either from the local cache or fetched from the
+    /// server. It'll be promoted in the local cache, so don't use this for
+    /// a large number of automated calls if you don't want the user to
+    /// think that this stream is used alot.
     pub async fn get_stream(&mut self, id: u64) -> Result<&Stream> {
         if let Some(cache_idx) = self.cache.streams.entry(&id).map(|x| x.index()) {
             Ok(cache_idx.get_value(&mut self.cache.streams))
@@ -281,8 +292,8 @@ impl Client {
         }
     }
 
-    /// Interpret the stream and topic fields of a narrow as regular expressions and replace them
-    /// with their real names.
+    /// Interpret the stream and topic fields of a narrow as regular expressions
+    /// and replace them with their real names.
     ///
     /// The topic/stream will be searched for in the local cache.
     /// If no matching stream/topic is found in the cache, fetches all
@@ -324,7 +335,8 @@ impl Client {
         Ok(())
     }
 
-    /// Add the current stream/topic to a narrow if no stream/topic is specified in the narrow.
+    /// Add the current stream/topic to a narrow if no stream/topic is specified
+    /// in the narrow.
     fn narrow_to_current(&self, narrows: &mut Vec<Narrow>) {
         if !narrows.iter().any(|x| x.operator == "stream") {
             if let Some(selected_stream) = self.selected_stream.as_ref() {
@@ -348,13 +360,15 @@ impl Client {
 
     /// Get a list of all messages matching a query.
     ///
-    /// If `regex_search` is `true`, the topic and/or stream narrows will be interpretted as regular
-    /// expressions and searched in the local cache of recently read topics and streams. If no
-    /// stream is found, all streams will be fetched from the server and searched. If a topic is
-    /// not found, all topics for the searched stream (or currently selected stream) will be
-    /// fetched from the server and searched.
+    /// If `regex_search` is `true`, the topic and/or stream narrows will be
+    /// interpretted as regular expressions and searched in the local cache
+    /// of recently read topics and streams. If no stream is found, all
+    /// streams will be fetched from the server and searched. If a topic is
+    /// not found, all topics for the searched stream (or currently selected
+    /// stream) will be fetched from the server and searched.
     ///
-    /// If the `global` flag is `false`, the straem and topic will default to the current ditto.
+    /// If the `global` flag is `false`, the straem and topic will default to
+    /// the current ditto.
     pub async fn get_messages(
         &mut self,
         mut req: GetMessagesRequest,
@@ -366,8 +380,8 @@ impl Client {
             self.unregex_narrow(narrows.as_mut_slice()).await?;
         }
 
-        // If no stream/topic was narrowed and `global` is `false` and a topic or stream is
-        // selected, add it to the list of narrows.
+        // If no stream/topic was narrowed and `global` is `false` and a topic or stream
+        // is selected, add it to the list of narrows.
         if !global {
             self.narrow_to_current(narrows);
         }
@@ -403,8 +417,8 @@ impl Client {
             self.unregex_narrow(narrows.as_mut_slice()).await?;
         }
 
-        // If no stream/topic was narrowed and `global` is `false` and a topic or stream is
-        // selected, add it to the list of narrows.
+        // If no stream/topic was narrowed and `global` is `false` and a topic or stream
+        // is selected, add it to the list of narrows.
         if !global {
             self.narrow_to_current(narrows);
         }
@@ -460,8 +474,9 @@ impl Client {
     /// Select a stream by either a name or a regex for the name.
     ///
     /// If a regex is provided, the
-    /// stream will first be searched for in the cache and then all streams will be fetched from
-    /// the server. If a plain name is given, it will be checked that the stream indeed exists.
+    /// stream will first be searched for in the cache and then all streams will
+    /// be fetched from the server. If a plain name is given, it will be
+    /// checked that the stream indeed exists.
     ///
     /// Returns a reference to the newly selected stream.
     pub async fn select_stream(&mut self, name: &str, is_regex: bool) -> Result<&Stream> {

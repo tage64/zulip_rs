@@ -1,8 +1,9 @@
-use rustyline::error::ReadlineError;
-use shlex::Shlex; // For splitting a string into command line arguments.
 use std::future::Future;
 use std::ops::ControlFlow;
 use std::pin::Pin;
+
+use rustyline::error::ReadlineError;
+use shlex::Shlex; // For splitting a string into command line arguments.
 
 /// A result from a command.
 pub type CommandResult = anyhow::Result<ControlFlow<(), ()>>;
@@ -11,8 +12,9 @@ pub type CommandResult = anyhow::Result<ControlFlow<(), ()>>;
 ///
 /// # Arguments
 ///
-/// Takes a function generating a prompt, a run function for something implementing `clap::Subcommand`, and a mutable reference to some data that will be
-/// passed to the run-function of the command.
+/// Takes a function generating a prompt, a run function for something
+/// implementing `clap::Subcommand`, and a mutable reference to some data that
+/// will be passed to the run-function of the command.
 pub async fn run_repl<Cmds, T>(
     mut prompt: impl FnMut(&mut T) -> String,
     mut run_func: impl for<'a> FnMut(
@@ -24,10 +26,10 @@ pub async fn run_repl<Cmds, T>(
 where
     Cmds: clap::Subcommand + clap::FromArgMatches,
 {
-    // Create a super command which has all commands as subcommands. This is a so called
-    // "multicall" command, (see `clap::Command::multicall` for more information). The idea is that
-    // the argument list is sent to this command and the first argument should be recognized as a
-    // subcommand.
+    // Create a super command which has all commands as subcommands. This is a so
+    // called "multicall" command, (see `clap::Command::multicall` for more
+    // information). The idea is that the argument list is sent to this command
+    // and the first argument should be recognized as a subcommand.
     let mut super_command = clap::Command::new("")
         .multicall(true)
         .subcommand_required(true)
@@ -54,7 +56,10 @@ where
                 // shlex-stuff happens implace, we need to check whether that has failed first.
                 let arg_matches_res = super_command.try_get_matches_from_mut(arg_splitter.by_ref());
                 if arg_splitter.had_error {
-                    eprintln!("Error while splitting argument list. Perhaps an unclosed quotation or unended escape.");
+                    eprintln!(
+                        "Error while splitting argument list. Perhaps an unclosed quotation or \
+                         unended escape."
+                    );
                     continue;
                 }
 
