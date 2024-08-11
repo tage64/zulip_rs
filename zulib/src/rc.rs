@@ -7,6 +7,12 @@ use pest::Parser;
 #[grammar = "rc.pest"]
 struct INIParser;
 
+/// Configuration for a Zulip account.
+///
+/// A .zuliprc file corresponding to your account on a particular Zulip server can be downloaded
+/// via Web or Desktop applications connected to that server. In recent versions this can be found
+/// in your Personal settings in the Account & privacy section, under API key as 'Show/change your
+/// API key'.
 #[derive(Deserialize, Debug, Clone, PartialEq, Eq)]
 pub struct ZulipRc {
     pub email: String,

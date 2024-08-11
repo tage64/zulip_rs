@@ -270,23 +270,41 @@ async fn main() -> Result<()> {
         .unwrap()
         .start()?;
 
-    let zuliprc = zulib::ZulipRc::parse_from_str(&std::fs::read_to_string(
-        dirs::home_dir()
-            .context("No home dir in which to find .zuliprc found.")?
-            .join(".zuliprc"),
-    )?)?;
+    let zuliprc_path = dirs::home_dir()
+        .context("No home dir (in which to find .zuliprc) found.")?
+        .join(".zuliprc");
+    let zuliprc = zulib::ZulipRc::parse_from_str(
+        &std::fs::read_to_string(&zuliprc_path)
+            .map_err(|e| {
+                if e.kind() == std::io::ErrorKind::NotFound {
+                    anyhow!(
+                        "A .zuliprc file corresponding to your account on a particular Zulip \
+                         server can be downloaded via Web or Desktop applications connected to \
+                         that server. In recent versions this can be found in your Personal \
+                         settings in the Account & privacy section, under API key as 'Show/change \
+                         your API key'."
+                    )
+                } else {
+                    anyhow!(e)
+                }
+            })
+            .with_context(|| format!("Failed to read .zuliprc at {}", zuliprc_path.display()))?,
+    )?;
 
     let cache_file_path: Option<_> = dirs::cache_dir().map(|x| x.join("zcli.json"));
-
-    let mut client = if let Some(cache_file_content) = cache_file_path
+    let cache_file_content: Option<String> = cache_file_path
         .as_ref()
-        .and_then(|x| match std::fs::read_to_string(x) {
-            Err(e) if e.kind() == std::io::ErrorKind::NotFound => None,
-            x => Some(x),
-        })
-        .transpose()?
-    {
-        Client::from_cache(&cache_file_content, zuliprc)?
+        .and_then(
+            |cache_file_path| match std::fs::read_to_string(cache_file_path) {
+                Err(e) if e.kind() == std::io::ErrorKind::NotFound => None,
+                x => Some(x.with_context(|| {
+                    format!("Failed to read cache file at {}", cache_file_path.display())
+                })),
+            },
+        )
+        .transpose()?;
+    let mut client = if let Some(cache) = cache_file_content {
+        Client::from_cache(&cache, zuliprc)?
     } else {
         Client::new(zuliprc)?
     };
